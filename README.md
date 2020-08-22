@@ -1,4 +1,4 @@
-MeTRAbs: Metric-Scale Truncation-Robust Heatmaps for Absolute 3D Human Pose Estimation
+# MeTRAbs: Metric-Scale Truncation-Robust Heatmaps for Absolute 3D Human Pose Estimation
 
 Paper: https://arxiv.org/abs/2007.07227
 Code coming soon.
