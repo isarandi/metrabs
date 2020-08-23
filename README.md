@@ -9,7 +9,7 @@ Paper: https://arxiv.org/abs/2007.07227
 
 ## Inference
 
-1. Download the model file from [metrabs_3dpw_chall_model.pb](https://omnomnom.vision.rwth-aachen.de/data/metrabs/metrabs_3dpw_chall_model.pb).
+1. Download the model file from [metrabs_3dpw_chall_model.pb](https://omnomnom.vision.rwth-aachen.de/data/metrabs/metrabs_3dpw_chall_model.pb) (Pretrained model for academic research use!).
 2. Run the example inference script as: `./inference.py --model-path=metrabs_3dpw_chall_model.pb`
 
 ## Training
