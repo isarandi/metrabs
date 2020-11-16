@@ -43,6 +43,8 @@ unzip models/*.zip -d ./models
 ./demo.py
 ```
 
+(These models predict the 24 joints of the SMPL body model. Stay tuned for further models!)
+
 MeTRAbs, at its core, is based on single-person pose estimation and it is extended to multi-person applications by 
 first detecting people and then running the single-person estimation for each of them. This so-called top-down multiperson 
 strategy is already (quite efficiently) packaged into a standalone model for convenience. This multiperson extension
