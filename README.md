@@ -1,18 +1,15 @@
-# MeTRAbs Absolute 3D Pose Estimator
+*This is a computer vision algorithm that takes a single RGB image as the input and estimates 3D human poses as the output.*
+
+# MeTRAbs Absolute 3D Human Pose Estimator
+## [Paper](https://arxiv.org/abs/2007.07227) | [Video](https://youtu.be/BemM8-Lx47g)
 
 ![](demo.png)
 
-[![video thumbnail](thumbnail_video.png)](https://youtu.be/BemM8-Lx47g)
-
-* Paper: https://arxiv.org/abs/2007.07227
-* Video: https://youtu.be/BemM8-Lx47g
-
 **MeTRAbs: Metric-Scale Truncation-Robust Heatmaps for Absolute 3D Human Pose Estimation** <br>
-**by István Sárándi, Timm Linder, Kai O. Arras, Bastian Leibe** <br>
+*by István Sárándi, Timm Linder, Kai O. Arras, Bastian Leibe* <br>
 RWTH Aachen University, Robert Bosch GmbH
 
 To appear in: IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Selected Best Works From Automated Face and Gesture Recognition 2020 
-
 
 Please cite as 
 
