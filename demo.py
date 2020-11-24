@@ -9,14 +9,14 @@ def main():
 
 
 def demo_with_just_an_image():
-    model = tf.saved_model.load('./metrabs_multiperson_smpl_combined')
+    model = tf.saved_model.load('./models/metrabs_multiperson_smpl_combined')
     image = tf.image.decode_jpeg(tf.io.read_file('./test_image_3dpw.jpg'))
     detections, poses3d, poses2d = model.predict_single_image(image)
     visualize_pose(image.numpy(), poses3d.numpy(), poses2d.numpy(), model.joint_edges.numpy())
 
 
 def demo_with_known_intrinsics_and_boxes():
-    model = tf.saved_model.load('./metrabs_multiperson_smpl')
+    model = tf.saved_model.load('./models/metrabs_multiperson_smpl')
     image = tf.image.decode_jpeg(tf.io.read_file('./test_image_3dpw.jpg'))
     intrinsics = tf.constant([[1962, 0, 540], [0, 1969, 960], [0, 0, 1]], dtype=tf.float32)
 
