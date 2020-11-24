@@ -25,8 +25,7 @@ Please cite as
   * Our method has won the **[3DPW Challenge](https://virtualhumans.mpi-inf.mpg.de/3DPW_Challenge/)** at ECCV2020!
    
 ## Inference Code
-To allow easy application in downstream research, we package our models in a way that requires
-nothing more than a TensorFlow 2 installation and inference is just a single line of Python. 
+To allow easy application in downstream research, we created standalone models that only requires a TensorFlow 2 installation and where inference is just a single line of Python.
 
 Download the model(s) and try `./demo.py` as follows:
 
