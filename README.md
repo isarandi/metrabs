@@ -89,31 +89,31 @@ To train models, make sure to [install the dependencies](DEPENDENCIES.md) and [p
 ### MeTRo (root-relative model)
 
 ```bash
-$ cd src
-$ ./main.py \
-    --train --dataset=h36m --train-on=trainval --epochs=27 --seed=1 \
-    --logdir=h36m/metro_seed1
+cd src
+./main.py \
+  --train --dataset=h36m --train-on=trainval --epochs=27 --seed=1 \
+  --logdir=h36m/metro_seed1
 
-$ ./main.py \
-    --train --dataset=h36m --train-on=trainval --epochs=27 --seed=1 \
-    --scale-recovery=bone-lengths --logdir=h36m/2.5d_seed1
+./main.py \
+  --train --dataset=h36m --train-on=trainval --epochs=27 --seed=1 \
+  --scale-recovery=bone-lengths --logdir=h36m/2.5d_seed1
 
-$ ./main.py \
-    --train --dataset=mpi-inf-3dhp --train-on=trainval --epochs=27 --seed=1 \
-    --background-aug-prob=0.7 --universal-skeleton --logdir=3dhp/metro_univ_seed1
+./main.py \
+  --train --dataset=mpi-inf-3dhp --train-on=trainval --epochs=27 --seed=1 \
+  --background-aug-prob=0.7 --universal-skeleton --logdir=3dhp/metro_univ_seed1
 
-$ ./main.py \
-    --train --dataset=mpi-inf-3dhp --train-on=trainval --epochs=27 --seed=1 \
-    --background-aug-prob=0.7 --no-universal-skeleton --logdir=3dhp/metro_nonuniv_seed1
+./main.py \
+  --train --dataset=mpi-inf-3dhp --train-on=trainval --epochs=27 --seed=1 \
+  --background-aug-prob=0.7 --no-universal-skeleton --logdir=3dhp/metro_nonuniv_seed1
 ```
 
 ### MeTRAbs (absolute model including root estimation)
 
 ```bash
-$ ./main.py \
-    --train --dataset=muco-17-150k --dataset2d=mpii-yolo --scale-recovery=metrabs \
-    --epochs=24 --seed=1 --background-aug-prob=0.7 --occlude-aug-prob=0.3 \ 
-    --stride-test=32 --logdir=muco/metrabs_univ_seed1 --universal-skeleton
+./main.py \
+  --train --dataset=muco-17-150k --dataset2d=mpii-yolo --scale-recovery=metrabs \
+  --epochs=24 --seed=1 --background-aug-prob=0.7 --occlude-aug-prob=0.3 \ 
+  --stride-test=32 --logdir=muco/metrabs_univ_seed1 --universal-skeleton
 ```
 
 ## Evaluation
@@ -123,21 +123,21 @@ To compute benchmark evaluation metrics, we first need to produce predictions on
  For example:
 
 ```bash
-$ CHECKPOINT_DIR="$DATA_ROOT/experiments/h36m/someconfig"
-$ ./main.py --test --dataset=h36m --stride-test=4 --checkpoint-dir="$CHECKPOINT_DIR"
-$ python -m scripts.eval_h36m --pred-path="$CHECKPOINT_DIR/predictions_h36m.npz"
+CHECKPOINT_DIR="$DATA_ROOT/experiments/h36m/someconfig"
+./main.py --test --dataset=h36m --stride-test=4 --checkpoint-dir="$CHECKPOINT_DIR"
+python -m scripts.eval_h36m --pred-path="$CHECKPOINT_DIR/predictions_h36m.npz"
 ```
 
 ```bash
-$ CHECKPOINT_DIR="$DATA_ROOT/experiments/3dhp/someconfig"
-$ ./main.py --test --dataset=mpi-inf-3dhp --stride-test=4 --checkpoint-dir="$CHECKPOINT_DIR"
-$ python -m scripts.eval_3dhp --pred-path="$CHECKPOINT_DIR/predictions_mpi-inf-3dhp.npz"
+CHECKPOINT_DIR="$DATA_ROOT/experiments/3dhp/someconfig"
+./main.py --test --dataset=mpi-inf-3dhp --stride-test=4 --checkpoint-dir="$CHECKPOINT_DIR"
+python -m scripts.eval_3dhp --pred-path="$CHECKPOINT_DIR/predictions_mpi-inf-3dhp.npz"
 ```
 
 ```bash
-$ CHECKPOINT_DIR="$DATA_ROOT/experiments/muco/someconfig"
-$ ./main.py --test --dataset=mupots --scale-recovery=metrabs --stride-test=32 --checkpoint-dir="$CHECKPOINT_DIR"
-$ python -m scripts.eval_mupots --pred-path="$CHECKPOINT_DIR/predictions_mupots.npz"
+CHECKPOINT_DIR="$DATA_ROOT/experiments/muco/someconfig"
+./main.py --test --dataset=mupots --scale-recovery=metrabs --stride-test=32 --checkpoint-dir="$CHECKPOINT_DIR"
+python -m scripts.eval_mupots --pred-path="$CHECKPOINT_DIR/predictions_mupots.npz"
 ```
 
 The first command in each case creates the file `$CHECKPOINT_DIR/predictions_$DATASET.npz`.
@@ -149,8 +149,8 @@ Note: the script `eval_mupots.py` was designed and tested to produce the same re
 To evaluate and average over multiple random seeds, as done in the paper:
 
 ```bash
-$ for s in {1..5}; do ./main.py --train --test --dataset=h36m --train-on=trainval --epochs=27 --seed=$i --logdir=h36m/metro_seed$i; done
-$ python -m scripts.eval_h36m --pred-path="h36m/metro_seed1/predictions_h36m.npz" --seeds=5
+for s in {1..5}; do ./main.py --train --test --dataset=h36m --train-on=trainval --epochs=27 --seed=$i --logdir=h36m/metro_seed$i; done
+python -m scripts.eval_h36m --pred-path="h36m/metro_seed1/predictions_h36m.npz" --seeds=5
 ```
 
 ## Packaging Models
@@ -160,20 +160,20 @@ To make it easy to reuse these models in downstream research, we can make use of
 We first export a single-person TensorFlow SavedModel that operates on batches of 256x256 px image crops directly:
 
 ```bash
-$ CHECKPOINT_DIR="$DATA_ROOT/experiments/muco/someconfig"
-$ ./main.py --scale-recovery=metrabs --dataset=mupots --checkpoint-dir="$CHECKPOINT_DIR" --export-file="$CHECKPOINT_DIR"/metrabs_mupots_singleperson --data-format=NHWC --stride-train=32 --stride-test=32
+CHECKPOINT_DIR="$DATA_ROOT/experiments/muco/someconfig"
+./main.py --scale-recovery=metrabs --dataset=mupots --checkpoint-dir="$CHECKPOINT_DIR" --export-file="$CHECKPOINT_DIR"/metrabs_mupots_singleperson --data-format=NHWC --stride-train=32 --stride-test=32
 ```
 
 Then we build a multiperson model, which takes full (uncropped) images and multiple bounding boxes per image as its input arguments and outputs poses: 
 
 ```bash
-$ python -m scripts.build_multiperson_model --input-model-path="$CHECKPOINT_DIR"/metrabs_mupots_singleperson --output-model-path="$CHECKPOINT_DIR"/metrabs_mupots_multiperson
+python -m scripts.build_multiperson_model --input-model-path="$CHECKPOINT_DIR"/metrabs_mupots_singleperson --output-model-path="$CHECKPOINT_DIR"/metrabs_mupots_multiperson
 ```
 
 We can also build a combined detector + pose estimator model as follows:
 
 ```bash
-$ python -m scripts.build_combined_model --input-model-path="$CHECKPOINT_DIR"/metrabs_mupots_multiperson --detector-path=./yolov4 --output-model-path="$CHECKPOINT_DIR"/metrabs_mupots_multiperson_combined
+python -m scripts.build_combined_model --input-model-path="$CHECKPOINT_DIR"/metrabs_mupots_multiperson --detector-path=./yolov4 --output-model-path="$CHECKPOINT_DIR"/metrabs_mupots_multiperson_combined
 ```
 
 ## 3DPW Inference
@@ -181,8 +181,8 @@ $ python -m scripts.build_combined_model --input-model-path="$CHECKPOINT_DIR"/me
 To generate results on 3DPW and to evaluate them, run
 
 ```bash
-$ python -m scripts.video_inference --gt-assoc --dataset=3dpw --detector-path=./yolov4 --model-path=models/metrabs_multiperson_smpl --crops=5 --output-dir=./3dpw_predictions 
-$ python -m scripts.eval_3dpw --pred-path=./3dpw_predictions
+python -m scripts.video_inference --gt-assoc --dataset=3dpw --detector-path=./yolov4 --model-path=models/metrabs_multiperson_smpl --crops=5 --output-dir=./3dpw_predictions 
+python -m scripts.eval_3dpw --pred-path=./3dpw_predictions
 ```
 
 The above `eval_3dpw` script is equivalent to the [official script](https://github.com/aymenmir1/3dpw-eval/) but it is much more efficient (however it does not evaluate joint angles, just joint positions).
