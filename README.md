@@ -16,6 +16,7 @@ Please cite as
   title={{MeTRAbs:} Metric-Scale Truncation-Robust Heatmaps for Absolute 3{D} Human Pose Estimation},
   author={S\'ar\'andi, Istv\'an and Linder, Timm and Arras, Kai O. and Leibe, Bastian},
   journal={IEEE Transactions on Biometrics, Behavior, and Identity Science},
+  year={2020}
   note={in press}
 }
 ```
@@ -44,6 +45,8 @@ also takes into account the implicit rotation that cropping induces. Instead of 
 of applying the appropriate homography transformation for perspective undistortion and returns the poses in the correct
 camera coordinate frame. The models also contain built-in capability for test-time augmentation
 (transforming each crop multiple times and averaging the results).
+
+Let's take a closer look at what's happening in `demo.py`.
 
 ### Case 1: No bounding boxes (and maybe unknown intrinsics)
 If you just have an image and know nothing else, you can run the combined detection+pose model with a baked-in YOLOv4 detector (based on https://github.com/hunglc007/tensorflow-yolov4-tflite).
@@ -152,7 +155,7 @@ $ python -m scripts.eval_h36m --pred-path="h36m/metro_seed1/predictions_h36m.npz
 
 ## Packaging Models
 
-To make it easy to reuse these models in downstream research, we can make use of TensorFlow's SavedModels, which capture the entire model and trained weights, so that the original Python code is no longer needed to run inference.
+To make it easy to reuse these models in downstream research, we can make use of TensorFlow's SavedModels, which capture the entire model (graph) and the trained weights, so that the original Python code is no longer needed to run inference.
 
 We first export a single-person TensorFlow SavedModel that operates on batches of 256x256 px image crops directly:
 
@@ -175,7 +178,7 @@ $ python -m scripts.build_combined_model --input-model-path="$CHECKPOINT_DIR"/me
 
 ## 3DPW Inference
 
-To generate results on 3DPW and evaluate them, run
+To generate results on 3DPW and to evaluate them, run
 
 ```bash
 $ python -m scripts.video_inference --gt-assoc --dataset=3dpw --detector-path=./yolov4 --model-path=models/metrabs_multiperson_smpl --crops=5 --output-dir=./3dpw_predictions 
@@ -183,3 +186,8 @@ $ python -m scripts.eval_3dpw --pred-path=./3dpw_predictions
 ```
 
 The above `eval_3dpw` script is equivalent to the [official script](https://github.com/aymenmir1/3dpw-eval/) but it is much more efficient (however it does not evaluate joint angles, just joint positions).
+
+
+# Contact
+
+Any questions? Drop an email to sarandi@vision.rwth-aachen.de
