@@ -1,5 +1,3 @@
-*This is a computer vision algorithm that takes a single RGB image as the input and estimates 3D human poses as the output.*
-
 # MeTRAbs Absolute 3D Human Pose Estimator
 ## [Paper](https://arxiv.org/abs/2007.07227) | [Video](https://youtu.be/BemM8-Lx47g)
 
@@ -33,14 +31,12 @@ nothing more than a TensorFlow 2 installation and inference is just a single lin
 Download the model(s) and try `./demo.py` as follows:
 
 ```bash
-wget https://omnomnom.vision.rwth-aachen.de/data/metrabs/metrabs_singleperson_smpl.zip -P ./models
-wget https://omnomnom.vision.rwth-aachen.de/data/metrabs/metrabs_multiperson_smpl.zip -P ./models
-wget https://omnomnom.vision.rwth-aachen.de/data/metrabs/metrabs_multiperson_smpl_combined.zip -P ./models
+wget https://omnomnom.vision.rwth-aachen.de/data/metrabs/metrabs_{singleperson_smpl,multiperson_smpl,multiperson_smpl_combined}.zip -P ./models
 unzip models/*.zip -d ./models
 ./demo.py
 ```
 
-(These models predict the 24 joints of the SMPL body model. Stay tuned for further models!)
+(These models predict the 24 joints of the [SMPL body model](https://smpl.is.tue.mpg.de/). Stay tuned for further models (COCO, Human3.6M)!)
 
 MeTRAbs, at its core, is based on single-person pose estimation and it is extended to multi-person applications by 
 first detecting people and then running the single-person estimation for each of them. This so-called top-down multiperson 
@@ -51,8 +47,8 @@ camera coordinate frame. The models also contain built-in capability for test-ti
 (transforming each crop multiple times and averaging the results).
 
 ### Case 1: No bounding boxes (and maybe unknown intrinsics)
-If you just have an image and know nothing else, you can run the combined model, which includes a baked-in YOLOv4 detector (based on https://github.com/hunglc007/tensorflow-yolov4-tflite).
-If the intrinsic matrix is not given, it is automatically assumed that the angle of view is 50 degrees, which is roughly appropriate for consumer cameras.
+If you just have an image and know nothing else, you can run the combined detection+pose model with a baked-in YOLOv4 detector (based on https://github.com/hunglc007/tensorflow-yolov4-tflite).
+If the intrinsic matrix is not given, the angle of view is assumed to be 50 degrees, which is roughly appropriate for consumer cameras.
 (Provide the true intrinsics for more accurate results.)
 
 ```python
@@ -63,32 +59,32 @@ detections, poses3d, poses2d = model.predict_single_image(image)
 ```
 
 ### Case 2: Known bounding boxes and intrinsics
-If you want to feed the bounding boxes yourself, you can do that as well with the basic multiperson model:
+If you want to feed the bounding boxes yourself, you can use the basic multiperson model:
 
 ```python
 import tensorflow as tf
 model = tf.saved_model.load('./models/metrabs_multiperson_smpl')
 image = tf.image.decode_jpeg(tf.io.read_file('./test_image_3dpw.jpg'))
 intrinsics = tf.constant([[1962, 0, 540], [0, 1969, 960], [0, 0, 1]], dtype=tf.float32)
-# Boxes are represented in [left, top, width, height] order
+# Boxes are represented as [x_left, y_top, width, height] arrays
 person_boxes = tf.constant([[0, 626, 367, 896], [524, 707, 475, 841], [588, 512, 54, 198]], tf.float32)
 poses3d = model.predict_single_image(image, intrinsics, person_boxes)
 ```
 
-To predict multiple images at once, use the `predict_multi_image` methods. In this case the bounding boxes
-are supplied in a tf.RaggedTensor, since each image in a batch may contain a different number of detections.
+To perform inference on multiple images at once, use the `predict_multi_image` method. In this case, supply the bounding boxes
+as a [tf.RaggedTensor](https://www.tensorflow.org/api_docs/python/tf/RaggedTensor), since each image in the batch may contain a different number of detections.
 
-In any case, the individual crops are automatically batched up behind the scenes and sent to the 
-single-person pose estimator in that batched form.
+In any case, the individual, per-person crops will be automatically batched up behind the scenes and sent to the 
+single-person pose estimator in that batched form for efficient parallelization on the GPU.
 
 
 ## Training
 
-Make sure to [install the dependencies](DEPENDENCIES.md) and [prepare the datasets](DATASETS.md)
- first (mind the licenses, some/most data is restricted to academic research), then you can train the models. Here are a few example configurations
- (append `--gui` to see visualizations):
+To train models, make sure to [install the dependencies](DEPENDENCIES.md) and [prepare the datasets](DATASETS.md)
+ first (mind the licenses, some/most data is restricted to academic research). Here are a few example configurations
+ (append `--gui` to see visualizations during training):
 
-### MeTRo
+### MeTRo (root-relative model)
 
 ```bash
 $ cd src
@@ -109,7 +105,7 @@ $ ./main.py \
     --background-aug-prob=0.7 --no-universal-skeleton --logdir=3dhp/metro_nonuniv_seed1
 ```
 
-### MeTRAbs
+### MeTRAbs (absolute model including root estimation)
 
 ```bash
 $ ./main.py \
@@ -121,7 +117,7 @@ $ ./main.py \
 ## Evaluation
 
 To compute benchmark evaluation metrics, we first need to produce predictions on test data,
- then we run the evaluation script on the prediction results.
+ then we run the corresponding evaluation script on the generated prediction results.
  For example:
 
 ```bash
@@ -144,11 +140,11 @@ $ python -m scripts.eval_mupots --pred-path="$CHECKPOINT_DIR/predictions_mupots.
 
 The first command in each case creates the file `$CHECKPOINT_DIR/predictions_$DATASET.npz`.
 
-Note: the script `eval_mupots.py` was designed and tested to produce the same results as Mehta et al.'s official MuPoTS Matlab evaluation script. 
+Note: the script `eval_mupots.py` was designed and tested to produce the same results as Mehta et al.'s official [MuPoTS Matlab evaluation script](http://gvv.mpi-inf.mpg.de/projects/SingleShotMultiPerson/). 
  However, this Python version is much faster and computes several different variations of the evaluation metrics at the same time 
- (only matched or all annotations, root relative or absolute, universal or metric-scale, bone rescaling, number of joints).
+ (only matched vs. all annotations, root relative vs. absolute, universal vs. metric-scale, bone rescaling, number of joints).
 
-To evaluate and average over multiple random seeds:
+To evaluate and average over multiple random seeds, as done in the paper:
 
 ```bash
 $ for s in {1..5}; do ./main.py --train --test --dataset=h36m --train-on=trainval --epochs=27 --seed=$i --logdir=h36m/metro_seed$i; done
@@ -157,6 +153,8 @@ $ python -m scripts.eval_h36m --pred-path="h36m/metro_seed1/predictions_h36m.npz
 
 ## Packaging Models
 
+To make it easy to reuse these models in downstream research, we can make use of TensorFlow's SavedModels, which capture the entire model and trained weights, so that the original Python code is no longer needed to run inference.
+
 We first export a single-person TensorFlow SavedModel that operates on batches of 256x256 px image crops directly:
 
 ```bash
@@ -164,13 +162,13 @@ $ CHECKPOINT_DIR="$DATA_ROOT/experiments/muco/someconfig"
 $ ./main.py --scale-recovery=metrabs --dataset=mupots --checkpoint-dir="$CHECKPOINT_DIR" --export-file="$CHECKPOINT_DIR"/metrabs_mupots_singleperson --data-format=NHWC --stride-train=32 --stride-test=32
 ```
 
-Then we build a multiperson model which takes full images and multiple bounding boxes per image as arguments: 
+Then we build a multiperson model, which takes full (uncropped) images and multiple bounding boxes per image as its input arguments and outputs poses: 
 
 ```bash
 $ python -m scripts.build_multiperson_model --input-model-path="$CHECKPOINT_DIR"/metrabs_mupots_singleperson --output-model-path="$CHECKPOINT_DIR"/metrabs_mupots_multiperson
 ```
 
-We can also build a combined detector + pose estimator model as follows: 
+We can also build a combined detector + pose estimator model as follows:
 
 ```bash
 $ python -m scripts.build_combined_model --input-model-path="$CHECKPOINT_DIR"/metrabs_mupots_multiperson --detector-path=./yolov4 --output-model-path="$CHECKPOINT_DIR"/metrabs_mupots_multiperson_combined
@@ -184,3 +182,5 @@ To generate results on 3DPW and evaluate them, run
 $ python -m scripts.video_inference --gt-assoc --dataset=3dpw --detector-path=./yolov4 --model-path=models/metrabs_multiperson_smpl --crops=5 --output-dir=./3dpw_predictions 
 $ python -m scripts.eval_3dpw --pred-path=./3dpw_predictions
 ```
+
+The above `eval_3dpw` script is equivalent to the [official script](https://github.com/aymenmir1/3dpw-eval/) but it is much more efficient (however it does not evaluate joint angles, just joint positions).
