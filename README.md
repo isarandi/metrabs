@@ -3,7 +3,7 @@
 
 ![](demo.png)
 
-**MeTRAbs: Metric-Scale Truncation-Robust Heatmaps for Absolute 3D Human Pose Estimation** <br>
+**[MeTRAbs: Metric-Scale Truncation-Robust Heatmaps for Absolute 3D Human Pose Estimation](https://arxiv.org/abs/2007.07227)** <br>
 *by István Sárándi, Timm Linder, Kai O. Arras, Bastian Leibe* <br>
 RWTH Aachen University, Robert Bosch GmbH
 
