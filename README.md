@@ -6,24 +6,14 @@
 **[MeTRAbs: Metric-Scale Truncation-Robust Heatmaps for Absolute 3D Human Pose Estimation](https://arxiv.org/abs/2007.07227)** <br>
 *by István Sárándi, Timm Linder, Kai O. Arras, Bastian Leibe* <br>
 RWTH Aachen University, Robert Bosch GmbH
-
-To appear in: IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Selected Best Works From Automated Face and Gesture Recognition 2020 
-
-Please cite as 
-
-```bibtex
-@article{Sarandi20TBIOM,
-  title={{MeTRAbs:} Metric-Scale Truncation-Robust Heatmaps for Absolute 3{D} Human Pose Estimation},
-  author={S\'ar\'andi, Istv\'an and Linder, Timm and Arras, Kai O. and Leibe, Bastian},
-  journal={IEEE Transactions on Biometrics, Behavior, and Identity Science},
-  year={2020}
-  note={in press}
-}
-```
+To appear in the IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Selected Best Works From Automated Face and Gesture Recognition 2020 
 
 ## News
-  * Training and evaluation code is now available along with dataset pre-processing scripts!
-  * Our method has won the **[3DPW Challenge](https://virtualhumans.mpi-inf.mpg.de/3DPW_Challenge/)** at ECCV2020!
+  * [2020-11-19] Oral presentation at the IEEE Conference on Automatic Face and Gesture Recognition (FG'20) ([Talk video](https://youtu.be/BemM8-Lx47g))
+  * [2020-11-16] Training and evaluation code now released along with dataset pre-processing scripts! Inference code updated to Tensorflow version 2.
+  * [2020-10-06] Journal paper accepted for publication in the IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Best of FG Special Issue
+  * [2020-08-23] Short presentation at ECCV2020's 3DPW workshop ([slides](https://vision.rwth-aachen.de/media/papers/203/metrabs_3dpw_slides.pdf))
+  * [2020-08-06] Our method has won the **[3DPW Challenge](https://virtualhumans.mpi-inf.mpg.de/3DPW_Challenge/)**
    
 ## Inference Code
 To allow easy application in downstream research, we created standalone models that only requires a TensorFlow 2 installation and where inference is just a single line of Python.
@@ -187,7 +177,30 @@ python -m scripts.eval_3dpw --pred-path=./3dpw_predictions
 
 The above `eval_3dpw` script is equivalent to the [official script](https://github.com/aymenmir1/3dpw-eval/) but it is much more efficient (however it does not evaluate joint angles, just joint positions).
 
+## Cite as
 
-# Contact
+```bibtex
+@article{Sarandi20TBIOM,
+  title={{MeTRAbs:} Metric-Scale Truncation-Robust Heatmaps for Absolute 3{D} Human Pose Estimation},
+  author={S\'ar\'andi, Istv\'an and Linder, Timm and Arras, Kai O. and Leibe, Bastian},
+  journal={IEEE Transactions on Biometrics, Behavior, and Identity Science},
+  year={2020}
+  note={in press}
+}
+```
+
+The above paper is an extended journal version of the FG'2020 conference paper:
+
+```bibtex
+@inproceedings{Sarandi20FG,
+  title={Metric-Scale Truncation-Robust Heatmaps for 3{D} Human Pose Estimation},
+  author={S\'ar\'andi, Istv\'an and Linder, Timm and Arras, Kai O. and Leibe, Bastian},
+  booktitle={IEEE International Conference on Automatic Face and Gesture Recognition},
+  pages={677-684},
+  year={2020}
+}
+```
+
+## Contact
 
 Any questions? Drop an email to sarandi@vision.rwth-aachen.de
