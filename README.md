@@ -15,7 +15,7 @@ To appear in the IEEE Transactions on Biometrics, Behavior, and Identity Science
   * [2020-08-06] Our method has won the **[3DPW Challenge](https://virtualhumans.mpi-inf.mpg.de/3DPW_Challenge/)**
    
 ## Inference Code
-To allow easy application in downstream research, we created standalone models that only requires a TensorFlow 2 installation and where inference is just a single line of Python.
+To allow easy application in downstream research, we release standalone models that only require a TensorFlow 2 installation and where inference is just a single line of Python.
 
 Download the model(s) and try `demo.py` as follows:
 
