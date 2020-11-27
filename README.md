@@ -3,8 +3,8 @@
 <p align="center"><img src=demo.png width="60%"></p>
 
 **[MeTRAbs: Metric-Scale Truncation-Robust Heatmaps for Absolute 3D Human Pose Estimation](https://arxiv.org/abs/2007.07227)** <br>
-*by István Sárándi, Timm Linder, Kai O. Arras, Bastian Leibe* <br>
-RWTH Aachen University, Robert Bosch GmbH <br>
+*by István Sárándi, Timm Linder, Kai O. Arras, Bastian Leibe* (RWTH Aachen University, Robert Bosch GmbH)<br>
+
 To appear in the IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Selected Best Works From Automated Face and Gesture Recognition 2020 
 
 ## News
@@ -15,32 +15,27 @@ To appear in the IEEE Transactions on Biometrics, Behavior, and Identity Science
   * [2020-08-06] Our method has won the **[3DPW Challenge](https://virtualhumans.mpi-inf.mpg.de/3DPW_Challenge/)**
    
 ## Inference Code
-To allow easy application in downstream research, we release standalone models that only require a TensorFlow 2 installation and where inference is just a single line of Python.
+To allow easy application in downstream research, we release **standalone TensorFlow models** (SavedModel). After loading the model, you can run inference in a single line of Python ([`demo.py`](demo.py))
 
-Download the model(s) and try `demo.py` as follows:
+First, download and unzip the model files:
 
 ```bash
 wget https://omnomnom.vision.rwth-aachen.de/data/metrabs/metrabs_{singleperson_smpl,multiperson_smpl,multiperson_smpl_combined}.zip -P ./models
 unzip models/*.zip -d ./models
-./demo.py
 ```
 
-(These models predict the 24 joints of the [SMPL body model](https://smpl.is.tue.mpg.de/). Stay tuned for further models (COCO, Human3.6M)!)
+These models predict the 24 joints of the [SMPL body model](https://smpl.is.tue.mpg.de/). Stay tuned for further models (COCO, Human3.6M)!
 
 MeTRAbs, at its core, is based on single-person pose estimation and it is extended to multi-person applications by 
 first detecting people and then running the single-person estimation for each of them. This so-called top-down multiperson 
 strategy is already (quite efficiently) packaged into a standalone model for convenience. This multiperson extension
-also takes into account the implicit rotation that cropping induces. Instead of naive cropping, this model takes care
+also takes into account the implicit rotation that cropping induces. Instead of naive cropping, the model takes care
 of applying the appropriate homography transformation for perspective undistortion and returns the poses in the correct
 camera coordinate frame. The models also contain built-in capability for test-time augmentation
 (transforming each crop multiple times and averaging the results).
 
-Let's take a closer look at what's happening in `demo.py`.
-
-### Case 1: No bounding boxes (and maybe unknown intrinsics)
-If you just have an image and know nothing else, you can run the combined detection+pose model with a baked-in YOLOv4 detector (based on https://github.com/hunglc007/tensorflow-yolov4-tflite).
-If the intrinsic matrix is not given, the angle of view is assumed to be 50 degrees, which is roughly appropriate for consumer cameras.
-(Provide the true intrinsics for more accurate results.)
+If you **just have an image** and know nothing else, you can run the **combined detection+pose model** with a baked-in YOLOv4 detector (based on https://github.com/hunglc007/tensorflow-yolov4-tflite).
+If the intrinsic matrix is not given, the angle of view is assumed to be 50 degrees (roughly appropriate for consumer cameras when zoomed out, but provide the true intrinsics for more accurate results.)
 
 ```python
 import tensorflow as tf
@@ -49,8 +44,7 @@ image = tf.image.decode_jpeg(tf.io.read_file('./test_image_3dpw.jpg'))
 detections, poses3d, poses2d = model.predict_single_image(image)
 ```
 
-### Case 2: Known bounding boxes and intrinsics
-If you want to feed the bounding boxes yourself, you can use the basic multiperson model:
+If you want to **supply the bounding boxes yourself**, you can use the basic multiperson model:
 
 ```python
 import tensorflow as tf
@@ -62,11 +56,25 @@ person_boxes = tf.constant([[0, 626, 367, 896], [524, 707, 475, 841], [588, 512,
 poses3d = model.predict_single_image(image, intrinsics, person_boxes)
 ```
 
-To perform inference on multiple images at once, use the `predict_multi_image` method. In this case, supply the bounding boxes
-as a [tf.RaggedTensor](https://www.tensorflow.org/api_docs/python/tf/RaggedTensor), since each image in the batch may contain a different number of detections.
+To perform inference on **multiple images at once**, use the `predict_multi_image` method. In this case, supply the bounding boxes
+as a [tf.RaggedTensor](https://www.tensorflow.org/api_docs/python/tf/RaggedTensor), since each image in the batch may contain a different number of detections. Intrinsics can be given as a 1x3x3 tensor, in which case the same matrix is used for all input images. Alternatively it can have shape `[n_images, 3, 3]` if each image has different intrinsics.
 
-In any case, the individual, per-person crops will be automatically batched up behind the scenes and sent to the 
+```python
+import tensorflow as tf
+model = tf.saved_model.load('./models/metrabs_multiperson_smpl')
+images = tf.stack([
+    tf.image.decode_jpeg(tf.io.read_file('./test_image1.jpg')),
+    tf.image.decode_jpeg(tf.io.read_file('./test_image2.jpg'))], axis=0)
+
+intrinsics = tf.constant([[[1962, 0, 540], [0, 1969, 960], [0, 0, 1]]], dtype=tf.float32)
+person_boxes = tf.ragged.constant([[[0, 626, 367, 896], [524, 707, 475, 841]], [[588, 512, 54, 198]]], tf.float32)
+poses3d = model.predict_multi_image(images, intrinsics, person_boxes)
+```
+
+In any case, the individual, per-person crops will be **automatically batched up behind the scenes** and sent to the 
 single-person pose estimator in that batched form for efficient parallelization on the GPU.
+One such concrete batch may contain crops from multiple images (when using `predict_multi_image`), 
+but the crops from one image may also be split in several batches if there are many boxes given. You can control this using the `internal_batch_size` argument to the above functions (0 means all crops are packed into one batch, which will lead to out-of-memory with many boxes).
 
 
 ## Training
@@ -131,7 +139,7 @@ python -m scripts.eval_mupots --pred-path="$CHECKPOINT_DIR/predictions_mupots.np
 
 The first command in each case creates the file `$CHECKPOINT_DIR/predictions_$DATASET.npz`.
 
-Note: the script `eval_mupots.py` was designed and tested to produce the same results as Mehta et al.'s official [MuPoTS Matlab evaluation script](http://gvv.mpi-inf.mpg.de/projects/SingleShotMultiPerson/). 
+Note: the script [`eval_mupots.py`](scripts/eval_mupots.py) was designed and tested to produce the same results as Mehta et al.'s official [MuPoTS Matlab evaluation script](http://gvv.mpi-inf.mpg.de/projects/SingleShotMultiPerson/). 
  However, this Python version is much faster and computes several different variations of the evaluation metrics at the same time 
  (only matched vs. all annotations, root relative vs. absolute, universal vs. metric-scale, bone rescaling, number of joints).
 
@@ -174,7 +182,7 @@ python -m scripts.video_inference --gt-assoc --dataset=3dpw --detector-path=./yo
 python -m scripts.eval_3dpw --pred-path=./3dpw_predictions
 ```
 
-The above `eval_3dpw` script is equivalent to the [official script](https://github.com/aymenmir1/3dpw-eval/) but it is much more efficient (however it does not evaluate joint angles, just joint positions).
+The above [`eval_3dpw`](scripts/eval_3dpw.py) script is equivalent to the [official script](https://github.com/aymenmir1/3dpw-eval/) but it is much more efficient (however it does not evaluate joint angles, just joint positions).
 
 ## Cite as
 
