@@ -1,6 +1,6 @@
 # MeTRAbs Absolute 3D Human Pose Estimator
 <p align="center"><img src=demo.png width="60%"></p>
-<p align="center"><img src=thumbnail_video.png width="30%"></p>
+<p align="center"><a href="https://youtu.be/BemM8-Lx47g"><img src=thumbnail_video.png width="30%"></a></p>
 
 **[MeTRAbs: Metric-Scale Truncation-Robust Heatmaps for Absolute 3D Human Pose Estimation](https://arxiv.org/abs/2007.07227)** <br>
 *by István Sárándi, Timm Linder, Kai O. Arras, Bastian Leibe* (RWTH Aachen University, Robert Bosch GmbH)<br>
