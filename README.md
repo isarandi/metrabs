@@ -4,8 +4,7 @@
 
 **[MeTRAbs: Metric-Scale Truncation-Robust Heatmaps for Absolute 3D Human Pose Estimation](https://arxiv.org/abs/2007.07227)** <br>
 *by István Sárándi, Timm Linder, Kai O. Arras, Bastian Leibe* (RWTH Aachen University, Robert Bosch GmbH)<br>
-
-To appear in the IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Selected Best Works From Automated Face and Gesture Recognition 2020 
+IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Selected Best Works From Automated Face and Gesture Recognition 2020 
 
 ## News
   * [2020-11-19] Oral presentation at the IEEE Conference on Automatic Face and Gesture Recognition (FG'20, online) ([Talk Video](https://youtu.be/BemM8-Lx47g) and [Slides](https://vision.rwth-aachen.de/media/papers/203/slides_metrabs.pdf))
@@ -15,7 +14,7 @@ To appear in the IEEE Transactions on Biometrics, Behavior, and Identity Science
   * [2020-08-06] Our method has won the **[3DPW Challenge](https://virtualhumans.mpi-inf.mpg.de/3DPW_Challenge/)**
    
 ## Inference Code
-To allow easy application in downstream research, we release **standalone TensorFlow models** (SavedModel). After loading the model, you can run inference in a single line of Python ([`demo.py`](demo.py))
+We release **standalone TensorFlow models** (SavedModel) to allow easy application in downstream research. After loading the model, you can run inference in a single line of Python ([`demo.py`](demo.py))
 
 First, download and unzip the model files:
 
@@ -23,16 +22,7 @@ First, download and unzip the model files:
 wget https://omnomnom.vision.rwth-aachen.de/data/metrabs/metrabs_{singleperson_smpl,multiperson_smpl,multiperson_smpl_combined}.zip -P ./models
 unzip models/*.zip -d ./models
 ```
-
 These models predict the 24 joints of the [SMPL body model](https://smpl.is.tue.mpg.de/). Stay tuned for further models (COCO, Human3.6M)!
-
-MeTRAbs, at its core, is based on single-person pose estimation and it is extended to multi-person applications by 
-first detecting people and then running the single-person estimation for each of them. This so-called top-down multiperson 
-strategy is already (quite efficiently) packaged into a standalone model for convenience. This multiperson extension
-also takes into account the implicit rotation that cropping induces. Instead of naive cropping, the model takes care
-of applying the appropriate homography transformation for perspective undistortion and returns the poses in the correct
-camera coordinate frame. The models also contain built-in capability for test-time augmentation
-(transforming each crop multiple times and averaging the results).
 
 If you **just have an image** and know nothing else, you can run the **combined detection+pose model** with a baked-in YOLOv4 detector (based on https://github.com/hunglc007/tensorflow-yolov4-tflite).
 If the intrinsic matrix is not given, the angle of view is assumed to be 50 degrees (roughly appropriate for consumer cameras when zoomed out, but provide the true intrinsics for more accurate results.)
@@ -71,7 +61,14 @@ person_boxes = tf.ragged.constant([[[0, 626, 367, 896], [524, 707, 475, 841]], [
 poses3d = model.predict_multi_image(images, intrinsics, person_boxes)
 ```
 
-In any case, the individual, per-person crops will be **automatically batched up behind the scenes** and sent to the 
+MeTRAbs, at its core, is based on single-person pose estimation and it is extended to multi-person applications by 
+first detecting people and then running the single-person estimation for each of them. This so-called **top-down multiperson 
+strategy** is already (quite efficiently) packaged into a standalone model for convenience. This multiperson extension
+also takes into account the implicit rotation that cropping induces. Instead of naive cropping, the model takes care
+of applying the appropriate **homography transformation for perspective undistortion** and returns the poses in the 3D camera coordinate frame corresponding to the full image. The models also contain built-in capability for test-time augmentation
+(transforming each crop `n` times and averaging the results, this is configurable through the argument `n_aug` to the prediction functions).
+
+The individual, per-person crops will be **automatically batched up behind the scenes** and sent to the 
 single-person pose estimator in that batched form for efficient parallelization on the GPU.
 One such concrete batch may contain crops from multiple images (when using `predict_multi_image`), 
 but the crops from one image may also be split in several batches if there are many boxes given. You can control this using the `internal_batch_size` argument to the above functions (0 means all crops are packed into one batch, which will lead to out-of-memory with many boxes).
