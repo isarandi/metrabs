@@ -1,6 +1,6 @@
-# MeTRAbs Absolute 3D Human Pose Estimator ([Paper](https://arxiv.org/abs/2007.07227) | [Video](https://youtu.be/BemM8-Lx47g))
-
+# MeTRAbs Absolute 3D Human Pose Estimator
 <p align="center"><img src=demo.png width="60%"></p>
+<p align="center"><img src=thumbnail_video.png width="30%"></p>
 
 **[MeTRAbs: Metric-Scale Truncation-Robust Heatmaps for Absolute 3D Human Pose Estimation](https://arxiv.org/abs/2007.07227)** <br>
 *by István Sárándi, Timm Linder, Kai O. Arras, Bastian Leibe* (RWTH Aachen University, Robert Bosch GmbH)<br>
@@ -9,7 +9,7 @@ IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Select
 ## News
   * [2020-11-19] Oral presentation at the IEEE Conference on Automatic Face and Gesture Recognition (FG'20, online) ([Talk Video](https://youtu.be/BemM8-Lx47g) and [Slides](https://vision.rwth-aachen.de/media/papers/203/slides_metrabs.pdf))
   * [2020-11-16] Training and evaluation code now released along with dataset pre-processing scripts! Code and models upgraded to Tensorflow 2.
-  * [2020-10-06] Journal paper accepted for publication in the IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Best of FG Special Issue
+  * [2020-10-06] [Journal paper](https://arxiv.org/abs/2007.07227) accepted for publication in the IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Best of FG Special Issue
   * [2020-08-23] Short presentation at ECCV2020's 3DPW workshop ([slides](https://vision.rwth-aachen.de/media/papers/203/metrabs_3dpw_slides.pdf))
   * [2020-08-06] Our method has won the **[3DPW Challenge](https://virtualhumans.mpi-inf.mpg.de/3DPW_Challenge/)**
    
