@@ -1,6 +1,7 @@
 # MeTRAbs Absolute 3D Human Pose Estimator
 
 <a href="https://colab.research.google.com/github/isarandi/metrabs/blob/master/metrabs_demo.ipynb" target="_parent\"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a><br>
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/metrabs-metric-scale-truncation-robust/3d-human-pose-estimation-on-3d-poses-in-the)](https://paperswithcode.com/sota/3d-human-pose-estimation-on-3d-poses-in-the?p=metrabs-metric-scale-truncation-robust)
 
 <p align="center"><img src=demo.png width="60%"></p>
 <p align="center"><a href="https://youtu.be/BemM8-Lx47g"><img src=thumbnail_video.png width="30%"></a></p>
