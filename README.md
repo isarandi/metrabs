@@ -1,4 +1,7 @@
 # MeTRAbs Absolute 3D Human Pose Estimator
+
+<a href="https://colab.research.google.com/github/isarandi/metrabs/blob/master/metrabs_demo.ipynb" target="_parent\"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a><br>
+
 <p align="center"><img src=demo.png width="60%"></p>
 <p align="center"><a href="https://youtu.be/BemM8-Lx47g"><img src=thumbnail_video.png width="30%"></a></p>
 
@@ -14,7 +17,7 @@ IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Select
   * [2020-08-06] Our method has won the **[3DPW Challenge](https://virtualhumans.mpi-inf.mpg.de/3DPW_Challenge/)**
    
 ## Inference Code
-We release **standalone TensorFlow models** (SavedModel) to allow easy application in downstream research. After loading the model, you can run inference in a single line of Python ([`demo.py`](demo.py))
+We release **standalone TensorFlow models** (SavedModel) to allow easy application in downstream research. After loading the model, you can run inference in a single line of Python ([`demo.py`](demo.py)). You can try it in action in [Google Colab](https://colab.research.google.com/github/isarandi/metrabs/blob/master/metrabs_demo.ipynb)
 
 First, download and unzip the model files:
 
