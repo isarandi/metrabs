@@ -20,11 +20,9 @@ IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Select
   * [2020-08-06] Our method has won the **[3DPW Challenge](https://virtualhumans.mpi-inf.mpg.de/3DPW_Challenge/)**
    
 ## Inference Code
-We release **standalone TensorFlow models** (SavedModel) to allow easy application in downstream research. After loading the model, you can run inference in a single line of Python ([`demo.py`](demo.py)). 
+We release **standalone TensorFlow models** (SavedModel) to allow easy application in downstream research. After loading the model, you can run inference in a single line of Python ([`demo.py`](demo.py)). You can try it in action in [Google Colab](https://colab.research.google.com/github/isarandi/metrabs/blob/master/metrabs_demo.ipynb).
 
 (Note: These models were trained on the datasets cited in the paper. Since some are publicly available only for non-commercial use, the same restrictions may likely apply to the trained models as well. This is not legal advice.)
-
-You can try it in action in [Google Colab](https://colab.research.google.com/github/isarandi/metrabs/blob/master/metrabs_demo.ipynb)
 
 First, download and unzip the model files:
 
