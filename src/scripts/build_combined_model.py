@@ -83,7 +83,7 @@ class DetectorAndPoseEstimator(tf.Module):
         poses_flat = poses.flat_values
         intrinsics_repeat = tf.repeat(intrinsics, n_poses_per_image, axis=0)
         poses2d_flat = tf.einsum(
-            '...nk,...jk->...nj', poses_flat / poses_flat[..., 2:], intrinsics_repeat)
+            '...nk,...jk->...nj', poses_flat / poses_flat[..., 2:], intrinsics_repeat)[..., :2]
         poses2d = tf.RaggedTensor.from_row_lengths(poses2d_flat, n_poses_per_image)
         return detections, poses, poses2d
 
