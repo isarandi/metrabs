@@ -1,10 +1,16 @@
 # MeTRAbs Absolute 3D Human Pose Estimator
+
+<a href="https://colab.research.google.com/github/isarandi/metrabs/blob/master/metrabs_demo.ipynb" target="_parent\"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a><br>
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/metrabs-metric-scale-truncation-robust/3d-human-pose-estimation-on-3d-poses-in-the)](https://paperswithcode.com/sota/3d-human-pose-estimation-on-3d-poses-in-the?p=metrabs-metric-scale-truncation-robust)
+
 <p align="center"><img src=demo.png width="60%"></p>
-<p align="center"><img src=thumbnail_video.png width="30%"></p>
+<p align="center"><a href="https://youtu.be/BemM8-Lx47g"><img src=thumbnail_video.png width="30%"></a></p>
+
+This repository contains code for the methods described in the following paper:
 
 **[MeTRAbs: Metric-Scale Truncation-Robust Heatmaps for Absolute 3D Human Pose Estimation](https://arxiv.org/abs/2007.07227)** <br>
-*by István Sárándi, Timm Linder, Kai O. Arras, Bastian Leibe* (RWTH Aachen University, Robert Bosch GmbH)<br>
-IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Selected Best Works From Automated Face and Gesture Recognition 2020 
+*by István Sárándi, Timm Linder, Kai O. Arras, Bastian Leibe*<br>
+IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Selected Best Works From Automatic Face and Gesture Recognition 2020 
 
 ## News
   * [2020-11-19] Oral presentation at the IEEE Conference on Automatic Face and Gesture Recognition (FG'20, online) ([Talk Video](https://youtu.be/BemM8-Lx47g) and [Slides](https://vision.rwth-aachen.de/media/papers/203/slides_metrabs.pdf))
@@ -14,7 +20,9 @@ IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Select
   * [2020-08-06] Our method has won the **[3DPW Challenge](https://virtualhumans.mpi-inf.mpg.de/3DPW_Challenge/)**
    
 ## Inference Code
-We release **standalone TensorFlow models** (SavedModel) to allow easy application in downstream research. After loading the model, you can run inference in a single line of Python ([`demo.py`](demo.py))
+We release **standalone TensorFlow models** (SavedModel) to allow easy application in downstream research. After loading the model, you can run inference in a single line of Python ([`demo.py`](demo.py)). You can try it in action in [Google Colab](https://colab.research.google.com/github/isarandi/metrabs/blob/master/metrabs_demo.ipynb).
+
+(Note: These models were trained on the datasets cited in the paper. Since some are publicly available only for non-commercial use, the same restrictions may likely apply to the trained models as well. This is not legal advice.)
 
 First, download and unzip the model files:
 
@@ -207,4 +215,6 @@ The above paper is an extended journal version of the FG'2020 conference paper:
 
 ## Contact
 
-Any questions? Drop an email to sarandi@vision.rwth-aachen.de
+Code in this repository was written by [István Sárándi](https://isarandi.github.io) (RWTH Aachen University) unless indicated otherwise.
+
+Got any questions or feedback? Drop a mail to sarandi@vision.rwth-aachen.de!
