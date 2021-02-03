@@ -20,7 +20,7 @@ IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Select
   * [2020-08-06] Our method has won the **[3DPW Challenge](https://virtualhumans.mpi-inf.mpg.de/3DPW_Challenge/)**
    
 ## Inference Code
-We release **standalone TensorFlow models** (SavedModel) to allow easy application in downstream research. After loading the model, you can run inference in a single line of Python ([`demo.py`](demo.py)). You can try it in action in [Google Colab](https://colab.research.google.com/github/isarandi/metrabs/blob/master/metrabs_demo.ipynb).
+We release **standalone TensorFlow models** (SavedModel) to allow easy application in downstream research. After loading the model, you can run inference in a single line of Python ([`demo.py`](src/demo.py)). You can try it in action in [Google Colab](https://colab.research.google.com/github/isarandi/metrabs/blob/master/metrabs_demo.ipynb).
 
 (Note: These models were trained on the datasets cited in the paper. Since some are publicly available only for non-commercial use, the same restrictions may likely apply to the trained models as well. This is not legal advice.)
 
@@ -144,7 +144,7 @@ python -m scripts.eval_mupots --pred-path="$CHECKPOINT_DIR/predictions_mupots.np
 
 The first command in each case creates the file `$CHECKPOINT_DIR/predictions_$DATASET.npz`.
 
-Note: the script [`eval_mupots.py`](scripts/eval_mupots.py) was designed and tested to produce the same results as Mehta et al.'s official [MuPoTS Matlab evaluation script](http://gvv.mpi-inf.mpg.de/projects/SingleShotMultiPerson/). 
+Note: the script [`eval_mupots.py`](src/scripts/eval_mupots.py) was designed and tested to produce the same results as Mehta et al.'s official [MuPoTS Matlab evaluation script](http://gvv.mpi-inf.mpg.de/projects/SingleShotMultiPerson/). 
  However, this Python version is much faster and computes several different variations of the evaluation metrics at the same time 
  (only matched vs. all annotations, root relative vs. absolute, universal vs. metric-scale, bone rescaling, number of joints).
 
@@ -187,7 +187,7 @@ python -m scripts.video_inference --gt-assoc --dataset=3dpw --detector-path=./yo
 python -m scripts.eval_3dpw --pred-path=./3dpw_predictions
 ```
 
-The above [`eval_3dpw`](scripts/eval_3dpw.py) script is equivalent to the [official script](https://github.com/aymenmir1/3dpw-eval/) but it is much more efficient (however it does not evaluate joint angles, just joint positions).
+The above [`eval_3dpw`](src/scripts/eval_3dpw.py) script is equivalent to the [official script](https://github.com/aymenmir1/3dpw-eval/) but it is much more efficient (however it does not evaluate joint angles, just joint positions).
 
 ## Cite as
 
