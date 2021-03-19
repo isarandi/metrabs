@@ -84,8 +84,11 @@ $ ./extract_frames_and_masks_3dhp.py
 * Boxes are not given in this dataset, so we create them with the YOLOv3 detector. (I patched it to remove image creation and to print out the box coordinates.)
 
 ```bash
-$ CUDNN_ROOT=something/cudnn7.6.1 CUDA_ROOT=/usr/local/cuda-10.0 ./run_person_detector_3dhp.sh
+$ ./setup_darknet.sh
+$ ./find_3dhp_images_for_detection.py > 3dhp_images_for_detection.txt
+$ darknet/run_yolo.sh --image-paths-file 3dhp_images_for_detection.txt --out-path "$DATA_ROOT/3dhp/yolov3_person_detections.pkl"
 ```
+
 * About 2% (5314/235484) of the images will not have any detections. In most cases this is fine, there really is nobody in some of the images.
 * As with H36M, some more preprocessing will be done automatically in the main code on first run (cropping and resizing the relevant image parts for faster loading during training).
 
