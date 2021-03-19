@@ -19,7 +19,7 @@ darknet/run_yolo.sh --image-root "$DATA_ROOT/mpii" --out-path "$DATA_ROOT/mpii/y
 
 ./get_pascal_voc.sh
 
-./get_mpi_inf_3dhp.sh
+./get_3dhp.sh
 ./extract_frames_and_masks_3dhp.py 5
 
 ./find_3dhp_images_for_detection.py > 3dhp_images_for_detection.txt
