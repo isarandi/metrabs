@@ -1,0 +1,43 @@
+142,144c
+            try
+                bg_mask = repmat(double(fg_mask{np}(:,:,1)), 1, 1, 3)/255;
+                input_img = double(input_img) .* chair_mask{np} + double(image{np}) .*(1 - chair_mask{np});
+                input_img = double(image{np}) .* bg_mask + double(input_img) .*(1 - bg_mask);
+            catch
+                warning(getReport(exception))
+                continue
+            end
+.
+97a
+            try
+                input_img = imadjust(imread(img_path),[],[],0.7 + rand()/10);
+                fg_mask_path = [fgmask_base filesep sprintf('img_%d_%06d.jpg', composite_info{current_input_idx,pidx}{1,1}(3), composite_info{current_input_idx,pidx}{1,1}(4))];
+                fg_mask{np} = imgaussfilt(imread(fg_mask_path),gauss_filt_size);
+                chairmask_path = [chairmask_base filesep sprintf('img_%d_%06d.jpg', composite_info{current_input_idx,pidx}{1,1}(3), composite_info{current_input_idx,pidx}{1,1}(4))];
+                chair_mask{np} = imread(chairmask_path);
+                chair_mask{np} = double(repmat(chair_mask{np}(:,:,1), 1, 1, 3))/255;
+            catch exception
+                warning(img_path)
+                warning(getReport(exception))
+                continue
+            end
+.
+91,96d
+87,89c
+            img_base = fullfile(getenv('DATA_ROOT'), '3dhp', sprintf('S%d/Seq%d', sub_id, seq), 'imageSequence');
+            fgmask_base = fullfile(getenv('DATA_ROOT'), '3dhp', sprintf('S%d/Seq%d', sub_id, seq), 'FGmasks');
+            chairmask_base = fullfile(getenv('DATA_ROOT'), '3dhp', sprintf('S%d/Seq%d', sub_id, seq), 'ChairMasks');
+.
+59,60c
+system(sprintf('mkdir -p %s', out_folder));
+for chunk = chunk_start:chunk_end
+    if isfile(fullfile(out_folder, sprintf('chunk_%05d_annot.mat',chunk)))
+        continue
+    end
+.
+56c
+current_input_idx = (chunk_start-1)*chunk_size + 1;
+.
+4,5c
+function [] = mpii_create_muco_3dhp_composites(composite_info, out_path, folder_prefix, bg_data_path, fg_data_path, chair_data_path, chunk_start, chunk_end)
+.

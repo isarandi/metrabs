@@ -1,0 +1,31 @@
+134c
+mpii_create_muco_3dhp_composites(composite_info(:,:), out_data_path , sprintf('unaugmented_set_%03d',ts),  [], [], [], chunk_start, chunk_end);
+.
+131,132d
+113a
+composite_info = cell(num_quadruples*length(camera_set),4);
+.
+112d
+96a
+                 seq_info{idx,7} = annot3(:,joint_set,:,f);
+.
+74a
+
+          annot3 = dat.annot3{c}(filt_idx,:);
+          annot3 = reshape(annot3', 3, length(all_joints), 1, []);
+.
+69d
+62c
+          seq_info = cell(1,7); %Cols for img_name, crop_size, 2D annotation, 3D annotation, 3D O1, 3D O2, Chair Position, 3D nonuniv
+.
+13,17c
+out_data_path = fullfile(getenv('DATA_ROOT'), 'muco');
+system(sprintf('mkdir -p %s', out_data_path));
+.
+10c
+mpi_inf_3dhp_path = fullfile(getenv('DATA_ROOT'), '3dhp');
+.
+7d
+4a
+function [] = mpii_process_multiperson_train_set(chunk_start, chunk_end)
+.
