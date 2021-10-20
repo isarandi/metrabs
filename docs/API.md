@@ -1,6 +1,6 @@
 # MeTRAbs API Reference
 
-Make sure to read the [inference quick guide](INFERENCE_GUIDE.md) first.
+*See also the [inference example guide](INFERENCE_GUIDE.md) and [demo.py](../demo.py), [demo_webcam.py](../demo_webcam.py) and [demo_video_batched.py](../demo_video_batched.py)*
 
 All [models are released](MODELS.md) as TensorFlow SavedModels for ease of use and can be loaded as
 
