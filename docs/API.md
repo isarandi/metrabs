@@ -34,7 +34,7 @@ Only the first argument is mandatory.
 
 - **image**: a ```uint8``` Tensor of shape ```[H, W, 3]``` containing an RGB image.
 - **intrinsic_matrix**: a ```float32``` Tensor of shape ```[3, 3]```, the camera's intrinsic matrix.
-  If is left at the default value, the intrinsic matrix is determined from
+  If left at the default value, the intrinsic matrix is determined from
   the ```default_fov_degrees``` argument.
 - **distortion_coeffs**: a ```float32``` Tensor of shape ```[5]```, five lens distortion
   coefficients according to OpenCV's distortion model and the same order (k1, k2, p1, p2, k3).
@@ -186,8 +186,6 @@ model.estimate_poses_batched(
     extrinsic_matrix=(eye(4),), world_up_vector=(0, -1, 0), default_fov_degrees=55,
     internal_batch_size=64, antialias_factor=1, num_aug=5, average_aug=True, skeleton='')
 ```
-
-Only the first argument is mandatory.
 
 - **images**: a batch of RGB images as a ```uint8``` Tensor with shape ```[N, H, W, 3]```
 - **boxes**: ```[left, top, width, height]``` for each person's bounding box. It needs to be a
