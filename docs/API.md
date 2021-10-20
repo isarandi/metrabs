@@ -45,13 +45,6 @@ Only the first argument is mandatory.
   camera's roll angle is nonzero.
 - **default_fov_degrees**: in case ```intrinsic_matrix``` is not supplied, this float scalar
   specifies in the field of view in degrees along the larger side of the input image.
-- **detector_threshold**: float value for thresholding the inner person detector
-- **detector_nms_iou_threshold**: float value for use in non-max suppression inside the detector.
-  Too low values may suppress poses that are close to others in the image, while too high values may
-  result in duplicates (less likely to be a problem when
-  setting ```suppress_implausible_poses=True```).
-- **detector_flip_aug**: boolean, whether to run the image through the detector with horizontal
-  flipping as well and aggregate the results (before the detector NMS step).
 - **internal_batch_size**: integer, the size of the crop batches sent to the (Level 1) crop model
   internally. The image crops are batched up internally, so in case of many detections, they are
   processed in chunks to avoid running out of GPU memory. The appropriate value depends on available
