@@ -10,7 +10,7 @@
 
 This evaluation was performed with the built-in 5-crop test-time augmentation. More detailed evaluation results TBA.
 
-All the above models were jointly trained on the following datasets (click to view the official websites):
+All the above models were jointly trained on the datasets below. Due to their license terms, the resulting models **cannot be used for commercial purposes**.
 
 - [Human3.6M](http://vision.imar.ro/human3.6m)
 - [MuCo-3DHP](https://vcai.mpi-inf.mpg.de/projects/SingleShotMultiPerson/)
