@@ -245,7 +245,7 @@ model.predict_multi(image, intrinsic_matrix)
 
 #### Arguments:
 
-- **image**: a ```float16``` Tensor of shape ```[N, 256, 256, 3]```
+- **image**: a ```float16``` Tensor of shape ```[N, 256, 256, 3]``` with RGB pixel values ranging between 0 and 1
 - **intrinsic_matrix**: a ```float32``` Tensor of shape ```[N, 3, 3]```
 
 #### Return value:
