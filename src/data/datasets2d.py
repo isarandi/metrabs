@@ -1,12 +1,14 @@
 import functools
-
-import logging
-import numpy as np
+from options import logger
 import os
 import os.path
+
+import numpy as np
+import pycocotools.coco
 import scipy.optimize
 
 import boxlib
+import data.joint_filtering
 import matlabfile
 import paths
 import util
@@ -89,7 +91,7 @@ def make_mpii():
 
 
 @util.cache_result_on_disk(
-    f'{paths.CACHE_DIR}/mpii_yolo.pkl', min_time="2020-11-02T21:39:35")
+    f'{paths.CACHE_DIR}/mpii_yolo.pkl', min_time="2021-06-01T21:39:35")
 def make_mpii_yolo():
     joint_info_full = JointInfo(
         'rank,rkne,rhip,lhip,lkne,lank,pelv,thor,neck,head,rwri,relb,rsho,lsho,lelb,lwri',
@@ -106,8 +108,8 @@ def make_mpii_yolo():
 
     examples = []
     with util.BoundedPool(None, 120) as pool:
-        for anno_id, (anno, is_train, rect_ids) in enumerate(
-                zip(annolist, util.progressbar(s.img_train), s.single_person)):
+        for anno_id, (anno, is_train) in enumerate(
+                zip(annolist, util.progressbar(s.img_train))):
             if not is_train:
                 continue
 
@@ -148,7 +150,7 @@ def make_mpii_yolo():
                     ex.bbox = np.array(boxes[i_det][:4])
                     new_im_path = image_path.replace('mpii', 'mpii_downscaled_yolo')
                     without_ext, ext = os.path.splitext(new_im_path)
-                    new_im_path = f'{without_ext}_{rect_id:02d}{ext}'
+                    new_im_path = f'{without_ext}_{i_gt:02d}{ext}'
                     pool.apply_async(make_efficient_example, (ex, new_im_path),
                                      callback=examples.append)
 
@@ -162,17 +164,96 @@ def make_mpii_yolo():
     return Pose2DDataset(joint_info_used, examples)
 
 
+def make_coco_reduced(single_person=False, face=True):
+    joint_names = 'rank,rkne,rhip,lhip,lkne,lank,rwri,relb,lelb,lwri'
+    if face:
+        joint_names += ',nose,leye,reye,lear,rear'
+
+    edges = 'lelb-lwri,relb-rwri,lhip-lkne-lank,rhip-rkne-rank'
+    joint_info = JointInfo(joint_names, edges)
+    ds = data.joint_filtering.convert_dataset(make_coco(single_person), joint_info)
+
+    body_joint_names = 'rank,rkne,rhip,lhip,lkne,lank,rwri,relb,lelb,lwri'.split(',')
+    body_joint_ids = [joint_info.ids[name] for name in body_joint_names]
+
+    def n_valid_body_joints(example):
+        return np.count_nonzero(
+            np.all(~np.isnan(example.coords[body_joint_ids]), axis=-1))
+
+    ds.examples[TRAIN] = [ex for ex in ds.examples[TRAIN] if n_valid_body_joints(ex) > 6]
+    return ds
+
+
+@util.cache_result_on_disk(f'{paths.CACHE_DIR}/cached_coco.dat', min_time="2020-02-01T02:53:21")
+def make_coco(single_person=True):
+    joint_info = JointInfo(
+        'nose,leye,reye,lear,rear,lsho,rsho,lelb,relb,lwri,rwri,lhip,rhip,lkne,rkne,lank,rank',
+        'lsho-lelb-lwri,rsho-relb-rwri,lhip-lkne-lank,rhip-rkne-rank,lear-leye-nose-reye-rear')
+    n_joints = joint_info.n_joints
+    learning_phase_shortnames = {TRAIN: 'train', VALID: 'val', TEST: 'test'}
+    UNLABELED = 0
+    OCCLUDED = 1
+    VISIBLE = 2
+    iou_threshold = 0.1 if single_person else 0.5
+
+    suffix = '' if single_person else '_multi'
+    examples_per_phase = {TRAIN: [], VALID: []}
+    with util.BoundedPool(None, 120) as pool:
+        for example_phase in (TRAIN, VALID):
+            phase_shortname = learning_phase_shortnames[example_phase]
+            coco_filepath = (
+                f'{paths.DATA_ROOT}/coco/annotations/person_keypoints_{phase_shortname}2014.json')
+            coco = pycocotools.coco.COCO(coco_filepath)
+
+            impath_to_examples = {}
+            for ann in coco.anns.values():
+                filename = coco.imgs[ann['image_id']]['file_name']
+                image_path = f'{paths.DATA_ROOT}/coco/{phase_shortname}2014/{filename}'
+
+                joints = np.array(ann['keypoints']).reshape([-1, 3])
+                visibilities = joints[:, 2]
+                coords = joints[:, :2].astype(np.float32).copy()
+                n_visible_joints = np.count_nonzero(visibilities == VISIBLE)
+                n_occluded_joints = np.count_nonzero(visibilities == OCCLUDED)
+                n_labeled_joints = n_occluded_joints + n_visible_joints
+
+                if n_visible_joints >= n_joints / 3 and n_labeled_joints >= n_joints / 2:
+                    coords[visibilities == UNLABELED] = np.nan
+                    bbox_pt1 = np.array(ann['bbox'][0:2], np.float32)
+                    bbox_wh = np.array(ann['bbox'][2:4], np.float32)
+                    bbox = np.array([*bbox_pt1, *bbox_wh])
+                    ex = Pose2DExample(image_path, coords, bbox=bbox)
+                    impath_to_examples.setdefault(image_path, []).append(ex)
+
+            n_images = len(impath_to_examples)
+            for impath, examples in util.progressbar(impath_to_examples.items(), total=n_images):
+                for i_example, example in enumerate(examples):
+                    box = boxlib.expand(boxlib.bb_of_points(example.coords), 1.25)
+                    if np.max(box[2:]) < 200:
+                        continue
+
+                    if single_person:
+                        other_boxes = [boxlib.expand(boxlib.bb_of_points(e.coords), 1.25)
+                                       for e in examples if e is not example]
+                        ious = np.array([boxlib.iou(b, box) for b in other_boxes])
+                        usable = np.all(ious < iou_threshold)
+                    else:
+                        usable = True
+
+                    if usable:
+                        new_im_path = impath.replace('coco', 'coco_downscaled' + suffix)
+                        without_ext, ext = os.path.splitext(new_im_path)
+                        new_im_path = f'{without_ext}_{i_example:02d}{ext}'
+                        pool.apply_async(
+                            make_efficient_example, (example, new_im_path),
+                            callback=examples_per_phase[example_phase].append)
+
+    examples_per_phase[TRAIN].sort(key=lambda ex: ex.image_path)
+    examples_per_phase[VALID].sort(key=lambda ex: ex.image_path)
+    return Pose2DDataset(joint_info, examples_per_phase[TRAIN], examples_per_phase[VALID])
+
+
 @functools.lru_cache()
 def get_dataset(dataset_name, *args, **kwargs):
-    from options import FLAGS
-    logging.debug(f'Making dataset {dataset_name}...')
-
-    def string_to_intlist(string):
-        return tuple(int(s) for s in string.split(','))
-
-    kwargs = {**kwargs}
-    for subj_key in ['train_subjects', 'valid_subjects', 'test_subjects']:
-        if getattr(FLAGS, subj_key):
-            kwargs[subj_key] = string_to_intlist(getattr(FLAGS, subj_key))
-
+    logger.debug(f'Making dataset {dataset_name}...')
     return globals()[f'make_{dataset_name}'](*args, **kwargs)

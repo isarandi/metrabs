@@ -5,31 +5,31 @@ By convention, a box is represented as the topleft x,y coordinates and the width
 import numpy as np
 
 
-def expand(bbox, expansion_factor=1, expansion_abs=0):
+def expand(bbox, expansion_factor=1):
     center_point = center(bbox)
-    new_size = np.maximum(bbox[2:] * expansion_factor, bbox[2:] + expansion_abs)
+    new_size = bbox[2:] * expansion_factor
     return np.concatenate([center_point - new_size / 2, new_size])
 
 
 def center(box):
-    return box[:2] + box[2:] / 2
+    return box[:2] + box[2:4] / 2
 
 
 def expand_to_square(box):
     center_point = center(box)
-    side = np.max(box[2:])
+    side = np.max(box[2:4])
     return np.array([center_point[0] - side / 2, center_point[1] - side / 2, side, side])
 
 
 def intersect(box, other_box):
     topleft = np.maximum(box[:2], other_box[:2])
-    bottomright = np.minimum(box[:2] + box[2:], other_box[:2] + other_box[2:])
+    bottomright = np.minimum(box[:2] + box[2:4], other_box[:2] + other_box[2:4])
     return np.concatenate([topleft, np.maximum(0, bottomright - topleft)])
 
 
 def box_hull(box, other_box):
     topleft = np.minimum(box[:2], other_box[:2])
-    bottomright = np.maximum(box[:2] + box[2:], other_box[:2] + other_box[2:])
+    bottomright = np.maximum(box[:2] + box[2:4], other_box[:2] + other_box[2:4])
     return np.concatenate([topleft, bottomright - topleft])
 
 

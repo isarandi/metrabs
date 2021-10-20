@@ -1,34 +1,38 @@
-import cv2r
-import imageio
 import copy
 import functools
+import warnings
 
 import cv2
 import numba
 import numpy as np
 import transforms3d
 
-import boxlib
+import cv2r
 
 
-def support_single(f):
-    """Makes a function that transforms multiple points accept also a single point"""
+def point_transform(f):
+    """Makes a function that transforms multiple points accept also a single point as well as
+    lists, tuples etc. that can be converted by np.asarray."""
 
     def wrapped(self, points, *args, **kwargs):
-        ndim = np.array(points).ndim
-        if ndim == 1:
-            return f(self, np.array([points]), *args, **kwargs)[0]
+        points = np.asarray(points, dtype=np.float32)
+        if points.ndim == 1:
+            return np.squeeze(f(self, points[np.newaxis], *args, **kwargs), 0)
         else:
             return f(self, points, *args, **kwargs)
 
     return wrapped
 
 
+def unit_vec(v):
+    return v / np.linalg.norm(v)
+
+
 class Camera:
     def __init__(
             self, optical_center=None, rot_world_to_cam=None, intrinsic_matrix=np.eye(3),
             distortion_coeffs=None, world_up=(0, 0, 1), extrinsic_matrix=None):
-        """Initializes camera.
+        """Pinhole camera with extrinsic and intrinsic calibration with optional distortions.
 
         The camera coordinate system has the following axes:
           x points to the right
@@ -49,98 +53,123 @@ class Camera:
             distortion_coeffs: parameters describing radial and tangential lens distortions,
                 following OpenCV's model and order: k1, k2, p1, p2, k3 or None,
                 if the camera has no distortion.
-            world_up: a world vector that is designated as "pointing up", for use when
-                the camera wants to roll itself upright.
+            world_up: a world vector that is designated as "pointing up".
+            extrinsic_matrix: 4x4 extrinsic transformation matrix as an alternative to
+                providing `optical_center` and `rot_world_to_cam`.
         """
 
         if optical_center is not None and extrinsic_matrix is not None:
-            raise Exception('At most one of `optical_center` and `extrinsic_matrix` needs to be '
-                            'provided!')
+            raise Exception('Cannot provide both `optical_center` and `extrinsic_matrix`!')
         if extrinsic_matrix is not None and rot_world_to_cam is not None:
-            raise Exception('At most one of `rot_world_to_cam` and `extrinsic_matrix` needs to be '
-                            'provided!')
+            raise Exception('Cannot provide both `rot_world_to_cam` and `extrinsic_matrix`!')
 
         if (optical_center is None) and (extrinsic_matrix is None):
-            optical_center = np.zeros(3)
+            optical_center = np.zeros(3, dtype=np.float32)
 
         if (rot_world_to_cam is None) and (extrinsic_matrix is None):
-            rot_world_to_cam = np.eye(3)
+            rot_world_to_cam = np.eye(3, dtype=np.float32)
 
         if extrinsic_matrix is not None:
-            self.R = np.asarray(extrinsic_matrix[:3, :3], np.float32)
-            self.t = (-self.R.T @ extrinsic_matrix[:3, 3]).astype(np.float32)
+            self.R = np.asarray(extrinsic_matrix[:3, :3], dtype=np.float32)
+            self.t = -self.R.T @ extrinsic_matrix[:3, 3].astype(np.float32)
         else:
-            self.R = np.asarray(rot_world_to_cam, np.float32)
-            self.t = np.asarray(optical_center, np.float32)
+            self.R = np.asarray(rot_world_to_cam, dtype=np.float32)
+            self.t = np.asarray(optical_center, dtype=np.float32)
 
-        self.intrinsic_matrix = np.asarray(intrinsic_matrix, np.float32)
+        self.intrinsic_matrix = np.asarray(intrinsic_matrix, dtype=np.float32)
         if distortion_coeffs is None:
             self.distortion_coeffs = None
         else:
-            self.distortion_coeffs = np.asarray(distortion_coeffs, np.float32)
+            self.distortion_coeffs = np.asarray(distortion_coeffs, dtype=np.float32)
 
-        self.world_up = np.asarray(world_up)
+        self.world_up = np.asarray(world_up, dtype=np.float32)
 
         if not np.allclose(self.intrinsic_matrix[2, :], [0, 0, 1]):
-            raise Exception(f'Bottom row of camera\'s intrinsic matrix must be (0,0,1), '
+            raise Exception(f'Bottom row of intrinsic matrix must be (0,0,1), '
                             f'got {self.intrinsic_matrix[2, :]}.')
+
+    def get_distortion_coeffs(self):
+        if self.distortion_coeffs is None:
+            return np.zeros(shape=(5,), dtype=np.float32)
+        return self.distortion_coeffs
 
     @staticmethod
     def create2D(imshape=(0, 0)):
-        intrinsics = np.eye(3)
+        """Create a camera for expressing 2D transformations by using intrinsics only.
+
+        Args:
+            imshape: height and width, the principal point of the intrinsics is set at the middle
+                of this image size.
+
+        Returns:
+            The new camera.
+        """
+
+        intrinsics = np.eye(3, dtype=np.float32)
         intrinsics[:2, 2] = [imshape[1] / 2, imshape[0] / 2]
         return Camera(intrinsic_matrix=intrinsics)
 
     def shift_image(self, offset):
+        """Adjust intrinsics so that the projected image is shifted by `offset`.
+
+        Args:
+            offset: an (x, y) offset vector. Positive values mean that the resulting image will
+                shift towards the left and down.
+        """
         self.intrinsic_matrix[:2, 2] += offset
 
-    def absolute_rotate(self, yaw=0, pitch=0, roll=0):
-        def unit_vec(v):
-            return v / np.linalg.norm(v)
-
-        if self.world_up[0] > self.world_up[1]:
-            world_forward = unit_vec(np.cross(self.world_up, [0, 1, 0]))
-        else:
-            world_forward = unit_vec(np.cross(self.world_up, [1, 0, 0]))
-        world_right = np.cross(world_forward, self.world_up)
-
-        R = np.row_stack([world_right, -self.world_up, world_forward]).astype(np.float32)
-        mat = transforms3d.euler.euler2mat(-yaw, -pitch, -roll, 'syxz')
-        self.R = mat @ R
-
     def allclose(self, other_camera):
+        """Check if all parameters of this camera are close to corresponding parameters
+        of `other_camera`.
+
+        Args:
+            other_camera: the camera to compare to.
+
+        Returns:
+            True if all parameters are close, False otherwise.
+        """
         return (np.allclose(self.intrinsic_matrix, other_camera.intrinsic_matrix) and
                 np.allclose(self.R, other_camera.R) and np.allclose(self.t, other_camera.t) and
                 allclose_or_nones(self.distortion_coeffs, other_camera.distortion_coeffs))
 
     def shift_to_desired(self, current_coords_of_the_point, target_coords_of_the_point):
-        """Shifts the principal point such that what's currently at `desired_center_image_point`
-        will be shown in the image center of an image shaped `imshape`."""
+        """Shift the principal point such that what's currently at `desired_center_image_point`
+        will be shown at `target_coords_of_the_point`.
 
-        self.intrinsic_matrix[:2, 2] += (
-                target_coords_of_the_point - current_coords_of_the_point)
+        Args:
+            current_coords_of_the_point: current location of the point of interest in the image
+            target_coords_of_the_point: desired location of the point of interest in the image
+        """
+
+        self.intrinsic_matrix[:2, 2] += (target_coords_of_the_point - current_coords_of_the_point)
 
     def reset_roll(self):
-        def unit_vec(v):
-            return v / np.linalg.norm(v)
+        """Roll the camera upright by turning along the optical axis to align the vertical image
+        axis with the vertical world axis (world up vector), as much as possible.
+        """
 
         self.R[:, 0] = unit_vec(np.cross(self.R[:, 2], self.world_up))
         self.R[:, 1] = np.cross(self.R[:, 0], self.R[:, 2])
 
-    def orbit_around(self, world_point, angle_radians, axis='vertical'):
-        """Rotates the camera around a vertical axis passing through `world point` by
-        `angle_radians`."""
+    def orbit_around(self, world_point_pivot, angle_radians, axis='vertical'):
+        """Rotate the camera around a vertical or horizontal axis passing through `world point` by
+        `angle_radians`.
+
+        Args:
+            world_point_pivot: the world coordinates of the pivot point to turn around
+            angle_radians: the amount to rotate
+            axis: 'vertical' or 'horizontal'.
+        """
 
         if axis == 'vertical':
             axis = self.world_up
         else:
             lookdir = self.R[2]
-            axis = np.cross(lookdir, self.world_up)
-            axis = axis / np.linalg.norm(axis)
+            axis = unit_vec(np.cross(lookdir, self.world_up))
 
         rot_matrix = cv2.Rodrigues(axis * angle_radians)[0]
         # The eye position rotates simply as any point
-        self.t = (rot_matrix @ (self.t - world_point)) + world_point
+        self.t = (rot_matrix @ (self.t - world_point_pivot)) + world_point_pivot
 
         # R is rotated by a transform expressed in world coords, so it (its inverse since its a
         # coord transform matrix, not a point transform matrix) is applied on the right.
@@ -148,12 +177,17 @@ class Camera:
         self.R = self.R @ rot_matrix.T
 
     def rotate(self, yaw=0, pitch=0, roll=0):
-        mat = transforms3d.euler.euler2mat(yaw, pitch, roll, 'ryxz').T
-        self.R = mat @ self.R
+        """Rotate this camera by yaw, pitch, roll Euler angles in radians,
+        relative to the current camera frame."""
+        camera_rotation = transforms3d.euler.euler2mat(yaw, pitch, roll, 'ryxz')
 
-    @support_single
+        # The coordinates rotate according to the inverse of how the camera itself rotates
+        point_coordinate_rotation = camera_rotation.T
+        self.R = point_coordinate_rotation @ self.R
+
+    @point_transform
     def camera_to_image(self, points):
-        """Transforms points from 3D camera coordinate space to image space.
+        """Transform points from 3D camera coordinate space to image space.
         The steps involved are:
             1. Projection
             2. Distortion (radial and tangential)
@@ -179,27 +213,29 @@ class Camera:
         """
 
         if self.distortion_coeffs is not None:
-            result = project_points(points, self.distortion_coeffs, self.intrinsic_matrix)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', numba.NumbaPerformanceWarning)
+                result = project_points(points, self.distortion_coeffs, self.intrinsic_matrix)
             return result
         else:
-            projected = points[:, :2] / points[:, 2:]
+            projected = points[..., :2] / points[..., 2:]
             return projected @ self.intrinsic_matrix[:2, :2].T + self.intrinsic_matrix[:2, 2]
 
-    @support_single
+    @point_transform
     def world_to_camera(self, points):
         points = np.asarray(points, np.float32)
         return (points - self.t) @ self.R.T
 
-    @support_single
+    @point_transform
     def camera_to_world(self, points):
         points = np.asarray(points, np.float32)
         return points @ np.linalg.inv(self.R).T + self.t
 
-    @support_single
+    @point_transform
     def world_to_image(self, points):
         return self.camera_to_image(self.world_to_camera(points))
 
-    @support_single
+    @point_transform
     def image_to_camera(self, points, depth=1):
         if self.distortion_coeffs is None:
             normalized_points = (
@@ -212,7 +248,7 @@ class Camera:
             points, self.intrinsic_matrix, self.distortion_coeffs, None, None, None)
         return cv2.convertPointsToHomogeneous(new_image_points)[:, 0, :] * depth
 
-    @support_single
+    @point_transform
     def image_to_world(self, points, camera_depth=1):
         return self.camera_to_world(self.image_to_camera(points, camera_depth))
 
@@ -228,14 +264,14 @@ class Camera:
     def zoom(self, factor):
         """Zooms the camera (factor > 1 makes objects look larger),
         while keeping the principal point fixed (scaling anchor is the principal point)."""
-        self.intrinsic_matrix[:2, :2] *= np.expand_dims(factor, -1)
+        self.intrinsic_matrix[:2, :2] *= np.expand_dims(np.float32(factor), -1)
 
     def scale_output(self, factor):
         """Adjusts the camera such that the images become scaled by `factor`. It's a scaling with
         the origin as anchor point.
         The difference with `self.zoom` is that this method also moves the principal point,
         multiplying its coordinates by `factor`."""
-        self.intrinsic_matrix[:2] *= np.expand_dims(factor, -1)
+        self.intrinsic_matrix[:2] *= np.expand_dims(np.float32(factor), -1)
 
     def undistort(self):
         self.distortion_coeffs = None
@@ -246,7 +282,7 @@ class Camera:
         fx = self.intrinsic_matrix[0, 0]
         fy = self.intrinsic_matrix[1, 1]
         fmean = 0.5 * (fx + fy)
-        multiplier = np.array([[fmean / fx, 0, 0], [0, fmean / fy, 0], [0, 0, 1]])
+        multiplier = np.array([[fmean / fx, 0, 0], [0, fmean / fy, 0], [0, 0, 1]], np.float32)
         self.intrinsic_matrix = multiplier @ self.intrinsic_matrix
 
     def horizontal_flip(self):
@@ -256,7 +292,7 @@ class Camera:
         """Adjusts the intrinsic matrix so that the principal point becomes located at the center
         of an image sized imshape (height, width)"""
 
-        self.intrinsic_matrix[:2, 2] = [imshape[1] / 2, imshape[0] / 2]
+        self.intrinsic_matrix[:2, 2] = np.float32([imshape[1] / 2, imshape[0] / 2])
 
     def shift_to_center(self, desired_center_image_point, imshape):
         """Shifts the principal point such that what's currently at `desired_center_image_point`
@@ -276,9 +312,6 @@ class Camera:
         if target_image_point is not None:
             target_world_point = self.image_to_world(target_image_point)
 
-        def unit_vec(v):
-            return v / np.linalg.norm(v)
-
         new_z = unit_vec(target_world_point - self.t)
         new_x = unit_vec(np.cross(new_z, self.world_up))
         new_y = np.cross(new_z, new_x)
@@ -293,10 +326,20 @@ class Camera:
         return self.intrinsic_matrix @ extrinsic_projection
 
     def get_extrinsic_matrix(self):
-        return np.block([[self.R, -self.R @ np.expand_dims(self.t, -1)], [0, 0, 0, 1]])
+        return np.block(
+            [[self.R, -self.R @ np.expand_dims(self.t, -1)], [0, 0, 0, 1]]).astype(np.float32)
 
     def copy(self):
         return copy.deepcopy(self)
+
+    @staticmethod
+    def from_fov(fov_degrees, imshape):
+        f = np.max(imshape[:2]) / (np.tan(np.deg2rad(fov_degrees) / 2) * 2)
+        intrinsics = np.array(
+            [[f, 0, imshape[1] / 2],
+             [0, f, imshape[0] / 2],
+             [0, 0, 1]], np.float32)
+        return Camera(intrinsic_matrix=intrinsics)
 
 
 def reproject_image_points(points, old_camera, new_camera):
@@ -326,6 +369,27 @@ def reproject_image_points(points, old_camera, new_camera):
 def reproject_image(
         image, old_camera, new_camera, output_imshape, border_mode=cv2.BORDER_CONSTANT,
         border_value=0, interp=None, antialias_factor=1, dst=None):
+    """Transform an `image` captured with `old_camera` to look like it was captured by
+    `new_camera`. The optical center (3D world position) of the cameras must be the same, otherwise
+    we'd have parallax effects and no unambiguous way to construct the output.
+    Ignores the issue of aliasing altogether.
+
+    Args:
+        image: the input image
+        old_camera: the camera that captured `image`
+        new_camera: the camera that should capture the newly returned image
+        output_imshape: (height, width) for the output image
+        border_mode: OpenCV border mode for treating pixels outside `image`
+        border_value: OpenCV border value for treating pixels outside `image`
+        interp: OpenCV interpolation to be used for resampling.
+        antialias_factor: If larger than 1, first render a higher resolution output image
+            that is `antialias_factor` times larger than `output_imshape` and subsequently resize
+            it by 'area' interpolation to the desired size.
+        dst: destination array (optional)
+
+    Returns:
+        The new image.
+    """
     if antialias_factor == 1:
         return reproject_image_aliased(
             image, old_camera, new_camera, output_imshape, border_mode, border_value, interp,
@@ -347,9 +411,11 @@ def reproject_image(
 def reproject_image_aliased(
         image, old_camera, new_camera, output_imshape, border_mode=cv2.BORDER_CONSTANT,
         border_value=0, interp=None, dst=None):
-    """Transforms an image captured with `old_camera` to look like it was captured by
+    """Transform an `image` captured with `old_camera` to look like it was captured by
     `new_camera`. The optical center (3D world position) of the cameras must be the same, otherwise
-    we'd have parallax effects and no unambiguous way to construct the output."""
+    we'd have parallax effects and no unambiguous way to construct the output.
+    Aliasing issues are ignored.
+    """
 
     if interp is None:
         interp = cv2.INTER_LINEAR
@@ -412,6 +478,10 @@ def reproject_image_aliased(
 
 
 def allclose_or_nones(a, b):
+    """Check if all corresponding values in arrays a and b are close to each other in the sense of
+    np.allclose, or both a and b are None, or one is None and the other is filled with zeros.
+    """
+
     if a is None and b is None:
         return True
 
@@ -419,7 +489,7 @@ def allclose_or_nones(a, b):
         return np.min(b) == np.max(b) == 0
 
     if b is None:
-        return np.min(b) == np.max(b) == 0
+        return np.min(a) == np.max(a) == 0
 
     return np.allclose(a, b)
 
@@ -428,7 +498,7 @@ def allclose_or_nones(a, b):
 def project_points(points, dist_coeff, intrinsic_matrix):
     intrinsic_matrix = intrinsic_matrix.astype(np.float32)
     points = points.astype(np.float32)
-    proj = points[:, :2] / points[:, 2:]
+    proj = points[..., :2] / points[..., 2:]
     r2 = np.sum(proj * proj, axis=1)
     distorter = (
             ((dist_coeff[4] * r2 + dist_coeff[1]) * r2 + dist_coeff[0]) * r2 +
@@ -440,6 +510,12 @@ def project_points(points, dist_coeff, intrinsic_matrix):
 
 @functools.lru_cache()
 def get_grid_coords(output_imshape):
+    """Return a meshgrid of coordinates for the image shape`output_imshape` (height, width).
+
+    Returns
+        Meshgrid of shape [height, width, 2], with the x and y coordinates (in this order)
+            along the last dimension. DType float32.
+    """
     y, x = np.mgrid[:output_imshape[0], :output_imshape[1]].astype(np.float32)
     return np.stack([x, y], axis=-1)
 
@@ -447,7 +523,7 @@ def get_grid_coords(output_imshape):
 def reproject_image_fast(
         image, old_camera, new_camera, output_imshape, border_mode=None, border_value=None,
         interp=cv2.INTER_LINEAR, dst=None):
-    """Like reproject_image, but assumes no distortions."""
+    """Like reproject_image, but assumes there are no lens distortions."""
 
     old_matrix = old_camera.intrinsic_matrix @ old_camera.R
     new_matrix = new_camera.intrinsic_matrix @ new_camera.R
@@ -481,3 +557,20 @@ def reproject_image_points_fast(points, old_camera, new_camera):
     pointsT = homography[:, :2] @ points.T + homography[:, 2:]
     pointsT = pointsT[:2] / pointsT[2:]
     return pointsT.T
+
+
+def get_affine(src_camera, dst_camera):
+    """Return the affine transformation matrix that brings points from src_camera frame
+    to dst_camera frame. Only works for in-plane rotations, translation and zoom.
+    Throws if the transform would need a homography (due to out of plane rotation)."""
+
+    # Check that the optical center and look direction stay the same
+    if (not np.allclose(src_camera.t, dst_camera.t) or
+            not np.allclose(src_camera.R[2], dst_camera.R[2])):
+        raise Exception(
+            'The optical center of the camera and its look '
+            'direction may not change in the affine case!')
+
+    src_points = np.array([[0, 0], [1, 0], [0, 1]], np.float32)
+    dst_points = reproject_image_points(src_points, src_camera, dst_camera)
+    return np.append(cv2.getAffineTransform(src_points, dst_points), [[0, 0, 1]], axis=0)

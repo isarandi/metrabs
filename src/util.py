@@ -1,3 +1,4 @@
+import collections
 import contextlib
 import ctypes
 import datetime
@@ -6,11 +7,11 @@ import hashlib
 import inspect
 import itertools
 import json
-import logging
 import multiprocessing as mp
 import os
 import os.path
 import pickle
+import queue
 import signal
 import threading
 import traceback
@@ -18,6 +19,9 @@ import traceback
 import numpy as np
 
 import paths
+import logging
+import time
+logger = logging.getLogger('metrabs')
 
 TRAIN = 0
 VALID = 1
@@ -71,18 +75,18 @@ def cache_result_on_disk(path, forced=None, min_time=None):
                 suffixed_path = path
 
             if not inner_forced and is_file_newer(suffixed_path, min_time):
-                logging.debug(f'Loading cached data from {suffixed_path}')
+                logger.info(f'Loading cached data from {suffixed_path}')
                 try:
                     return load_pickle(suffixed_path)
                 except Exception as e:
                     print(str(e))
-                    logging.error(f'Could not load from {suffixed_path}')
+                    logger.error(f'Could not load from {suffixed_path}')
                     raise e
 
             if os.path.exists(suffixed_path):
-                logging.debug(f'Recomputing data for {suffixed_path}')
+                logger.info(f'Recomputing data for {suffixed_path}')
             else:
-                logging.debug(f'Computing data for {suffixed_path}')
+                logger.info(f'Computing data for {suffixed_path}')
 
             result = f(*args, **kwargs)
             dump_pickle(result, suffixed_path)
@@ -134,7 +138,7 @@ def load_pickle(file_path):
         return pickle.load(f)
 
 
-def dump_pickle(data, file_path, protocol=pickle.HIGHEST_PROTOCOL):
+def dump_pickle(data, file_path, protocol=pickle.DEFAULT_PROTOCOL):
     ensure_path_exists(file_path)
     with open(file_path, 'wb') as f:
         pickle.dump(data, f, protocol)
@@ -187,25 +191,6 @@ def plot_mean_std(ax, x, ys, axis=0):
     ax.fill_between(x, mean - std, mean + std, alpha=0.3)
 
 
-def iterate_repeatedly(seq, shuffle_before_each_epoch=False, rng=None):
-    """Iterates over and yields the elements of `iterable` `n_epoch` times.
-    if `shuffle_before_each_epoch` is True, the elements are put in a list and shuffled before
-    every pass over the data, including the first."""
-
-    if rng is None:
-        rng = np.random.RandomState()
-
-    # create a (shallow) copy so shuffling only applies to the copy.
-    seq = list(seq)
-    for i_epoch in itertools.count():
-        logging.debug(f'starting epoch {i_epoch}')
-        if shuffle_before_each_epoch:
-            logging.debug(f'shuffling {i_epoch}')
-            rng.shuffle(seq)
-        yield from seq
-        logging.debug(f'ended epoch {i_epoch}')
-
-
 def random_partial_box(random_state):
     def generate():
         x1 = random_state.uniform(0, 0.5)
@@ -232,7 +217,6 @@ def init_worker_process():
     import os
     os.environ['OMP_NUM_THREADS'] = '1'
     os.environ['KMP_INIT_AT_FORK'] = 'FALSE'
-
     terminate_on_parent_death()
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
@@ -307,6 +291,33 @@ def init_cuda():
     print(cv2.cuda.setDevice(0))
 
 
+class DummyPool:
+    """Wrapper around multiprocessing.Pool that blocks on task submission (`apply_async`) if
+    there are already `task_buffer_size` tasks under processing. This can be useful in
+    throttling the task producer thread and avoiding too many tasks piling up in the queue and
+    eating up too much RAM."""
+
+    def __init__(self, n_processes, task_buffer_size):
+        pass
+
+    def apply_async(self, f, args, callback=None):
+        result = f(*args)
+        if callback is not None:
+            callback(result)
+
+    def close(self):
+        pass
+
+    def join(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
 class BoundedPool:
     """Wrapper around multiprocessing.Pool that blocks on task submission (`apply_async`) if
     there are already `task_buffer_size` tasks under processing. This can be useful in
@@ -365,15 +376,15 @@ def is_running_in_jupyter_notebook():
         return False  # Probably standard Python interpreter
 
 
-def progressbar(*args, **kwargs):
+def progressbar(iterable=None, *args, **kwargs):
     import tqdm.notebook
     import sys
     if is_running_in_jupyter_notebook():
-        return tqdm.notebook.tqdm(*args, **kwargs)
+        return tqdm.notebook.tqdm(iterable, *args, **kwargs)
     elif sys.stdout.isatty():
-        return tqdm.tqdm(*args, dynamic_ncols=True, **kwargs)
+        return tqdm.tqdm(iterable, *args, dynamic_ncols=True, **kwargs)
     else:
-        return args[0]
+        return iterable
 
 
 def ensure_absolute_path(path, root=paths.DATA_ROOT):
@@ -384,10 +395,6 @@ def ensure_absolute_path(path, root=paths.DATA_ROOT):
         return path
     else:
         return os.path.join(root, path)
-
-
-def invert_permutation(permutation):
-    return np.arange(len(permutation))[np.argsort(permutation)]
 
 
 def load_json(path):
@@ -412,3 +419,38 @@ def cycle_over_colors(range_zero_one=False):
         colors = [[c * 255 for c in color] for color in colors]
 
     return itertools.cycle(colors)
+
+
+def groupby(items, key):
+    result = collections.defaultdict(list)
+    for item in items:
+        result[key(item)].append(item)
+    return result
+
+
+def prefetch(seq, buffer_size):
+    q = queue.Queue(buffer_size)
+    end_of_sequence_marker = object()
+
+    def producer():
+        for elem in seq:
+            q.put(elem)
+        q.put(end_of_sequence_marker)
+
+    producer_thread = threading.Thread(target=producer)
+    producer_thread.start()
+
+    try:
+        while (elem := q.get()) is not end_of_sequence_marker:
+            yield elem
+    finally:
+        producer_thread.join()
+
+
+@contextlib.contextmanager
+def timed(name):
+    print(f'{name}...')
+    start = time.time()
+    yield
+    end = time.time()
+    print(f'{name}: {(end - start) * 1000:.1f} ms')

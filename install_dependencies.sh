@@ -11,10 +11,9 @@ bash ./Miniconda3-latest-Linux-x86_64.sh -b
 eval "$("$HOME/miniconda3/bin/conda" shell.bash hook)"
 
 # Create a new environment and install the dependencies:
-conda create --yes --name metrabs python=3.8 Cython matplotlib pillow imageio ffmpeg scikit-image scikit-learn tqdm numba cachetools Pillow
+conda create --yes --name metrabs python=3.8 matplotlib imageio ffmpeg scikit-image scikit-learn tqdm numba cachetools Pillow mayavi -c defaults -c conda-forge
 conda activate metrabs
-conda install --yes opencv -c conda-forge
-pip install tensorflow tf_slim tensorflow-addons attrdict jpeg4py imageio-ffmpeg transforms3d more_itertools spacepy
+pip install tensorflow tensorflow-addons attrdict importlib_resources jpeg4py imageio-ffmpeg transforms3d more_itertools spacepy einops yacs opencv-python
 
 # Install my fork of the COCO tools, used for managing runlength-encoded (RLE) masks.
 # The additional functionality in my fork is for mask inversion in RLE, which is only needed for generating the MuCo dataset.

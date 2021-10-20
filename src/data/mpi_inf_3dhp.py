@@ -20,7 +20,7 @@ def make_mpi_inf_3dhp(camera_ids=(0, 1, 2, 4, 5, 6, 7, 8)):
         'spi3,spi4,spi2,spin,pelv,neck,head,htop,lcla,lsho,lelb,lwri,lhan,rcla,rsho,relb,rwri,'
         'rhan,lhip,lkne,lank,lfoo,ltoe,rhip,rkne,rank,rfoo,rtoe'.split(','))
 
-    test_set_selected_joints = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 14]
+    test_set_selected_joints = [*range(14), 15, 16, 14]
     selected_joints = [7, 5, 14, 15, 16, 9, 10, 11, 23, 24, 25, 18, 19, 20, 3, 6, 4]
     joint_names = [all_short_names[j] for j in selected_joints]
 
@@ -68,8 +68,8 @@ def make_mpi_inf_3dhp(camera_ids=(0, 1, 2, 4, 5, 6, 7, 8)):
 
         for i_frame in util.progressbar(range(0, n_frames, frame_step)):
             image_relpath = (
-                    f'3dhp/S{i_subject + 1}/Seq{i_seq + 1}/'
-                    f'imageSequence/img_{i_cam}_{i_frame:06d}.jpg')
+                f'3dhp/S{i_subject + 1}/Seq{i_seq + 1}/'
+                f'imageSequence/img_{i_cam}_{i_frame:06d}.jpg')
 
             cam_coords = cam3d_coords[i_cam][i_frame]
             world_coords = cameras[i_cam].camera_to_world(cam_coords)
@@ -107,20 +107,8 @@ def make_mpi_inf_3dhp(camera_ids=(0, 1, 2, 4, 5, 6, 7, 8)):
     # TEST SET
     #################################
     test_examples = []
-
-    cam1_4 = make_3dhp_test_camera(
-        sensor_size=np.array([10, 10]), im_size=np.array([2048, 2048]), focal_length=7.32506,
-        pixel_aspect=1.00044, center_offset=np.array([-0.0322884, 0.0929296]), distortion=None,
-        origin=np.array([3427.28, 1387.86, 309.42]), up=np.array([-0.208215, 0.976233, 0.06014]),
-        right=np.array([0.000575281, 0.0616098, -0.9981]))
-
-    cam5_6 = make_3dhp_test_camera(
-        sensor_size=np.array([10, 5.625]), im_size=np.array([1920, 1080]), focal_length=8.770747185,
-        pixel_aspect=0.993236423, center_offset=np.array([-0.104908645, 0.104899704]),
-        distortion=np.array([-0.276859611, 0.131125256, -0.000360494, -0.001149441, -0.049318332]),
-        origin=np.array([-2104.3074, 1038.6707, -4596.6367]),
-        up=np.array([0.025272345, 0.995038509, 0.096227370]),
-        right=np.array([-0.939647257, -0.009210289, 0.342020929]))
+    cam1_4 = get_test_camera_subj1_4()
+    cam5_6 = get_test_camera_subj5_6()
 
     activity_names = [
         'Stand/Walk', 'Exercise', 'Sit on Chair', 'Reach/Crouch', 'On Floor', 'Sports', 'Misc.']
@@ -156,6 +144,24 @@ def make_mpi_inf_3dhp(camera_ids=(0, 1, 2, 4, 5, 6, 7, 8)):
     valid_examples.sort(key=lambda x: x.image_path)
     test_examples.sort(key=lambda x: x.image_path)
     return p3ds.Pose3DDataset(joint_info, train_examples, valid_examples, test_examples)
+
+
+def get_test_camera_subj1_4():
+    return make_3dhp_test_camera(
+        sensor_size=np.array([10, 10]), im_size=np.array([2048, 2048]), focal_length=7.32506,
+        pixel_aspect=1.00044, center_offset=np.array([-0.0322884, 0.0929296]), distortion=None,
+        origin=np.array([3427.28, 1387.86, 309.42]), up=np.array([-0.208215, 0.976233, 0.06014]),
+        right=np.array([0.000575281, 0.0616098, -0.9981]))
+
+
+def get_test_camera_subj5_6():
+    return make_3dhp_test_camera(
+        sensor_size=np.array([10, 5.625]), im_size=np.array([1920, 1080]), focal_length=8.770747185,
+        pixel_aspect=0.993236423, center_offset=np.array([-0.104908645, 0.104899704]),
+        distortion=np.array([-0.276859611, 0.131125256, -0.000360494, -0.001149441, -0.049318332]),
+        origin=np.array([-2104.3074, 1038.6707, -4596.6367]),
+        up=np.array([0.025272345, 0.995038509, 0.096227370]),
+        right=np.array([-0.939647257, -0.009210289, 0.342020929]))
 
 
 def get_bbox(im_coords, image_relpath, detections_all):

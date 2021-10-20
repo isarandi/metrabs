@@ -14,22 +14,25 @@ import boxlib
 import cameralib
 import improc
 import util
-
+import io
 
 @functools.lru_cache()
 def get_memory(shape):
     im = np.empty(shape=[*shape[:2], 3], dtype=np.float32)
-    cv2.cuda.registerPageLocked(im)
+    #cv2.cuda.registerPageLocked(im)
     cuda_im = cv2.cuda_GpuMat(shape[0], shape[1], cv2.CV_32FC3)
     return im, cuda_im
 
 
 def make_efficient_example(
-        ex, new_image_path, further_expansion_factor=1, image_adjustments_3dhp=False):
+        ex, new_image_path, further_expansion_factor=1,
+        image_adjustments_3dhp=False, min_time=None):
     """Make example by storing the image in a cropped and resized version for efficient loading"""
 
     is3d = hasattr(ex, 'world_coords')
-    w, h = improc.image_extents(util.ensure_absolute_path(ex.image_path))
+    w, h = (improc.image_extents(util.ensure_absolute_path(ex.image_path))
+            if isinstance(ex.image_path, str)
+            else (ex.image_path.shape[1], ex.image_path.shape[0]))
     full_box = boxlib.full_box(imsize=[w, h])
 
     if is3d:
@@ -43,8 +46,9 @@ def make_efficient_example(
 
     reprojected_box = reproject_box(ex.bbox, old_camera, new_camera, method='side_midpoints')
     reprojected_full_box = reproject_box(full_box, old_camera, new_camera, method='corners')
-    expanded_bbox = get_expanded_crop_box(
+    expanded_bbox = (get_expanded_crop_box(
         reprojected_box, reprojected_full_box, further_expansion_factor)
+        if further_expansion_factor > 0 else reprojected_box)
     scale_factor = min(1.2, 256 / np.max(reprojected_box[2:]) * 1.5)
     new_camera.shift_image(-expanded_bbox[:2])
     new_camera.scale_output(scale_factor)
@@ -53,15 +57,15 @@ def make_efficient_example(
     dst_shape = improc.rounded_int_tuple(scale_factor * expanded_bbox[[3, 2]])
 
     new_image_abspath = util.ensure_absolute_path(new_image_path)
-    if not (util.is_file_newer(new_image_abspath, "2020-10-03T23:00:00")
+    if not (util.is_file_newer(new_image_abspath, min_time)
                     and improc.is_image_readable(new_image_abspath)):
-        im = improc.imread_jpeg(ex.image_path)
-        host_im, cuda_im = get_memory(im.shape)
-        np.power((im.astype(np.float32) / 255), 2.2, out=host_im)
-        cuda_im.upload(host_im)
+        im = improc.imread_jpeg(ex.image_path) if isinstance(ex.image_path, str) else ex.image_path
+        #host_im, cuda_im = get_memory(im.shape)
+        im = np.power((im.astype(np.float32) / 255), 2.2)
+        #cuda_im.upload(host_im)
         new_im = cameralib.reproject_image(
-            cuda_im, old_camera, new_camera, dst_shape, antialias_factor=2, interp=cv2.INTER_CUBIC)
-        new_im = np.clip(new_im.download(), 0, 1)
+            im, old_camera, new_camera, dst_shape, antialias_factor=2, interp=cv2.INTER_CUBIC)
+        new_im = np.clip(new_im, 0, 1)
 
         if image_adjustments_3dhp:
             # enhance the 3dhp images to reduce the green tint and increase brightness
@@ -71,6 +75,7 @@ def make_efficient_example(
             new_im = (new_im ** (1 / 2.2) * 255).astype(np.uint8)
         util.ensure_path_exists(new_image_abspath)
         imageio.imwrite(new_image_abspath, new_im, quality=95)
+        assert improc.is_image_readable(new_image_abspath)
 
     new_ex = copy.deepcopy(ex)
     new_ex.bbox = reprojected_box

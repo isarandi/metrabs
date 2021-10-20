@@ -1,12 +1,13 @@
 import functools
-
-import logging
-import numpy as np
 import os.path
 
+import numpy as np
+
+import data.joint_filtering
 import paths
 import util
 from data.joint_info import JointInfo
+from options import logger
 from util import TEST, TRAIN, VALID
 
 
@@ -22,6 +23,9 @@ class Pose3DDataset:
         self.update_bones()
 
     def get_mean_bones(self, examples):
+        # if FLAGS.universal_skeleton:
+        #    coords3d = np.stack([ex.univ_coords for ex in examples], axis=0)
+        # else:
         coords3d = np.stack([ex.world_coords for ex in examples], axis=0)
         return [
             np.nanmean(np.linalg.norm(coords3d[:, i] - coords3d[:, j], axis=-1))
@@ -84,18 +88,24 @@ def make_mupots():
     return data.mupots.make_mupots()
 
 
+def make_mupots_yolo():
+    import data.mupots
+    return data.mupots.make_mupots_yolo()
+
+
 @util.cache_result_on_disk(
     f'{paths.CACHE_DIR}/muco_17_150k_old.pkl', min_time="2020-06-29T21:16:09")
 def make_muco_17_150k_old():
     ds = util.load_pickle(f'{paths.CACHE_DIR}/muco_150k_old.pkl')
-    mupots = make_mupots()
-    convert_dataset(ds, mupots.joint_info)
+    mupots = make_mupots_yolo()
+    data.joint_filtering.convert_dataset(ds, mupots.joint_info)
+    ds.examples[VALID] = mupots.examples[VALID]
     ds.examples[TEST] = mupots.examples[TEST]
     ds.update_bones()
     return ds
 
 
-@util.cache_result_on_disk(f'{paths.CACHE_DIR}/muco_17_150k.pkl', min_time="2020-06-29T21:16:09")
+@util.cache_result_on_disk(f'{paths.CACHE_DIR}/muco_17_150k.pkl', min_time="2021-09-10T00:00:04")
 def make_muco_17_150k():
     ds = make_muco()
 
@@ -106,8 +116,9 @@ def make_muco_17_150k():
     ds.examples[TRAIN] = [e for e in ds.examples[0] if get_image_id(e) < 150000]
 
     # Take only the 17 MuPoTS joints
-    mupots = make_mupots()
-    convert_dataset(ds, mupots.joint_info)
+    mupots = make_mupots_yolo()
+    data.joint_filtering.convert_dataset(ds, mupots.joint_info)
+    ds.examples[VALID] = mupots.examples[VALID]
     ds.examples[TEST] = mupots.examples[TEST]
     ds.update_bones()
     return ds
@@ -149,61 +160,13 @@ def make_many():
     return Pose3DDataset(joint_info, [dummy_example], [dummy_example], [dummy_example])
 
 
-def convert_dataset(src_dataset, dst_joint_info):
-    mapping = get_coord_mapping(src_dataset.joint_info, dst_joint_info)
-    src_dataset.examples = {
-        phase: convert_examples(src_dataset.examples[phase], mapping)
-        for phase in (TRAIN, VALID, TEST)}
-    src_dataset.joint_info = dst_joint_info
-
-
-def convert_examples(src_examples, mapping):
-    return [convert_example(e, mapping) for e in util.progressbar(src_examples)]
-
-
-def convert_coords(coords, mapping):
-    coords_transf = np.einsum('jc,ij->ic', np.nan_to_num(coords), mapping)
-    isnan_transf = np.einsum('jc,ij->ic', np.isnan(coords).astype(np.float32), mapping).astype(bool)
-    coords_transf[isnan_transf] = np.nan
-    return coords_transf
-
-
-def convert_example(src_ex, mapping):
-    src_ex.world_coords = convert_coords(src_ex.world_coords, mapping)
-    if src_ex.univ_coords is not None:
-        src_ex.univ_coords = convert_coords(src_ex.univ_coords, mapping)
-    return src_ex
-
-
-def get_coord_mapping(src_joint_info, dst_joint_info):
-    """Returns a new coordinate array that can be indexed according to `dst_joint_info`.
-    If a joint is in src but not in dst, it's thrown away, if a joint is in dst but not in
-    src, then the corresponding values are set to NaN.
-    """
-    src_names = src_joint_info.names
-    dst_names = dst_joint_info.names
-
-    compatible_alternatives = {'tors': ['tors', 'spin'], 'spin': ['tors', 'spin']}
-
-    mapping = np.zeros([dst_joint_info.n_joints, src_joint_info.n_joints])
-    for i_dst, name in enumerate(dst_names):
-        sought_names = compatible_alternatives.get(name, [name])
-        found_names = list(set(sought_names) & set(src_names))
-        if found_names:
-            i_src = src_names.index(found_names[0])
-            mapping[i_dst, i_src] = 1
-        else:
-            mapping[i_dst, 0] = np.nan
-    return mapping
-
-
 @functools.lru_cache()
 def get_dataset(dataset_name):
     from options import FLAGS
 
     if dataset_name.endswith('.pkl'):
         return util.load_pickle(util.ensure_absolute_path(dataset_name))
-    logging.debug(f'Making dataset {dataset_name}...')
+    logger.debug(f'Making dataset {dataset_name}...')
 
     kwargs = {}
 
@@ -215,3 +178,14 @@ def get_dataset(dataset_name):
             kwargs[subj_key] = string_to_intlist(getattr(FLAGS, subj_key))
 
     return globals()[f'make_{dataset_name}'](**kwargs)
+
+
+@functools.lru_cache()
+@util.cache_result_on_disk(f'{paths.CACHE_DIR}/joint_info')
+def get_joint_info(dataset_name):
+    ds = get_dataset(dataset_name)
+    ji = ds.joint_info
+    del ds
+    import gc
+    gc.collect()
+    return ji

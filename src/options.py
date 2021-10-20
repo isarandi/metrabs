@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import shlex
 import socket
 import sys
 
@@ -8,24 +9,44 @@ import paths
 import util
 
 FLAGS = argparse.Namespace()
+logger = logging.getLogger('metrabs')
 
 
-def initialize(parser):
+def initialize(parser, args=None):
     parser.add_argument('--loglevel', type=str, default='error')
-    parser.parse_args(namespace=FLAGS)
+    parser.parse_args(args=args, namespace=FLAGS)
     loglevel = dict(error=40, warning=30, info=20, debug=10)[FLAGS.loglevel]
     simple_formatter = logging.Formatter('{asctime}-{levelname:^1.1} -- {message}', style='{')
-    print_handler = logging.StreamHandler(sys.stdout)
+
+    if sys.stdout.isatty():
+        # Make sure that the log messages appear above the tqdm progess bars
+        import tqdm
+        class TQDMFile:
+            def write(self, x):
+                if len(x.rstrip()) > 0:
+                    tqdm.tqdm.write(x, file=sys.stdout)
+
+        out_stream = TQDMFile()
+    else:
+        out_stream = sys.stdout
+
+    print_handler = logging.StreamHandler(out_stream)
     print_handler.setLevel(loglevel)
     print_handler.setFormatter(simple_formatter)
-    logging.basicConfig(level=loglevel, handlers=[print_handler])
+    logger.setLevel(loglevel)
+    for handler in logger.handlers:
+        logger.removeHandler(handler)
+    logger.addHandler(print_handler)
 
 
-def initialize_with_logfiles(parser):
+def initialize_with_logfiles(parser, args=None):
     parser.add_argument('--logdir', type=str, default='default_logdir')
     parser.add_argument('--file', type=open, action=ParseFromFileAction)
     parser.add_argument('--loglevel', type=str, default='info')
-    parser.parse_args(namespace=FLAGS)
+    if isinstance(args, str):
+        args = shlex.split(args)
+
+    parser.parse_args(args=args, namespace=FLAGS)
     loglevel = dict(error=40, warning=30, info=20, debug=10)[FLAGS.loglevel]
     FLAGS.logdir = util.ensure_absolute_path(FLAGS.logdir, root=f'{paths.DATA_ROOT}/experiments')
     os.makedirs(FLAGS.logdir, exist_ok=True)
@@ -43,15 +64,24 @@ def initialize_with_logfiles(parser):
 
     simple_logfile_handler.setFormatter(simple_formatter)
     detailed_logfile_handler.setFormatter(detailed_formatter)
-    handlers = [simple_logfile_handler, detailed_logfile_handler]
+    logger.addHandler(simple_logfile_handler)
+    logger.addHandler(detailed_logfile_handler)
 
     if sys.stdout.isatty():
         # We only print the log messages to stdout if it's a terminal (tty).
         # Otherwise it goes to the log file.
-        print_handler = logging.StreamHandler(sys.stdout)
+
+        # Make sure that the log messages appear above the tqdm progess bars
+        import tqdm
+        class TQDMFile:
+            def write(self, x):
+                if len(x.rstrip()) > 0:
+                    tqdm.tqdm.write(x, file=sys.stdout)
+
+        print_handler = logging.StreamHandler(TQDMFile())
         print_handler.setLevel(loglevel)
         print_handler.setFormatter(simple_formatter)
-        handlers.append(print_handler)
+        logger.addHandler(print_handler)
     else:
         # Since we don't want to print the log to stdout, we also redirect stderr to the logfile to
         # save errors for future inspection. But stdout is still stdout.
@@ -60,7 +90,7 @@ def initialize_with_logfiles(parser):
         STDERR_FILENO = 2
         os.dup2(new_err_file.fileno(), STDERR_FILENO)
 
-    logging.basicConfig(level=logging.DEBUG, handlers=handlers)
+    logger.setLevel(logging.DEBUG)
 
 
 class ParseFromFileAction(argparse.Action):
@@ -76,14 +106,14 @@ class HyphenToUnderscoreAction(argparse.Action):
         setattr(namespace, self.dest, values.replace('-', '_'))
 
 
-class YesNoAction(argparse.Action):
+class BoolAction(argparse.Action):
     def __init__(self, option_strings, dest, default=False, required=False, help=None):
         positive_opts = option_strings
         if not all(opt.startswith('--') for opt in positive_opts):
-            raise ValueError('Yes/No arguments must be prefixed with --')
+            raise ValueError('Boolean arguments must be prefixed with --')
         if any(opt.startswith('--no-') for opt in positive_opts):
             raise ValueError(
-                'Yes/No arguments cannot start with --no-, the --no- version will be '
+                'Boolean arguments cannot start with --no-, the --no- version will be '
                 'auto-generated')
 
         negative_opts = ['--no-' + opt[2:] for opt in positive_opts]

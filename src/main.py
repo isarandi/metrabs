@@ -1,538 +1,384 @@
 #!/usr/bin/env python3
-
-import init
-
-# This `pass` keeps `init` on top, which needs to be imported first.
-pass
-import shutil
-import paths
-import logging
+import contextlib
 import os
-import os.path
 import re
+import sys
 
-import numpy as np
-from attrdict import AttrDict
-
-import data.datasets3d
-import data.datasets2d
-import data.data_loading
-import helpers
-
-import model.bone_length_based_backproj
-import model.metrabs
-import model.metro
-import model.twofive
-import session_hooks
-import tfasync
-import tensorflow as tf
-import tfu
-import tfu3d
-import util
-import util3d
-from options import FLAGS
-from session_hooks import EvaluationMetric
-from tfu import TEST, TRAIN, VALID
 import attrdict
+import keras
+import keras.callbacks
+import keras.models
+import keras.optimizers
+import numpy as np
+import tensorflow as tf
+import tensorflow_addons as tfa
 
-try:
-    import tensorflow_addons
-except:
-    pass
-
-
-def main():
-    init.initialize()
-    if FLAGS.train:
-        train()
-    if FLAGS.test:
-        test()
-    if FLAGS.export_file:
-        export()
+import backbones.builder
+import callbacks
+import data.data_loading
+import data.datasets2d
+import data.datasets3d
+import init
+import models.metrabs
+import models.util
+import parallel_preproc
+import tfu
+import util
+from options import FLAGS, logger
+from tfu import TEST, TRAIN, VALID
 
 
 def train():
-    logging.info('Training phase.')
-    rng = np.random.RandomState(FLAGS.seed)
-    n_done_steps = get_number_of_already_completed_steps(FLAGS.logdir, FLAGS.load_path)
+    strategy = tf.distribute.MirroredStrategy() if FLAGS.multi_gpu else dummy_strategy()
+    n_repl = strategy.num_replicas_in_sync
 
-    t_train = build_graph(
-        TRAIN, rng=util.new_rng(rng), n_epochs=FLAGS.epochs, n_done_steps=n_done_steps)
-    logging.info(f'Number of trainable parameters: {tfu.count_trainable_params():,}')
-    t_valid = (build_graph(VALID, shuffle=True, rng=util.new_rng(rng))
-               if FLAGS.validate_period else None)
-
-    helpers.run_train_loop(
-        t_train.train_op, checkpoint_dir=FLAGS.checkpoint_dir, load_path=FLAGS.load_path,
-        hooks=make_training_hooks(t_train, t_valid), init_fn=get_init_fn())
-    logging.info('Ended training.')
-
-
-def test():
-    logging.info('Test (scripts) phase.')
-    tf.compat.v1.reset_default_graph()
-    t = build_graph(TEST, n_epochs=1, shuffle=False)
-
-    test_counter = tfu.get_or_create_counter('testc')
-    counter_hook = session_hooks.counter_hook(test_counter)
-    example_hook = session_hooks.log_increment_per_sec(
-        'Examples', test_counter.var * FLAGS.batch_size_test, None, every_n_secs=FLAGS.hook_seconds)
-
-    hooks = [example_hook, counter_hook]
-    dataset = data.datasets3d.get_dataset(FLAGS.dataset)
-    if FLAGS.gui:
-        plot_hook = session_hooks.send_to_worker_hook(
-            [tfu.std_to_nhwc(t.x[0]), t.coords3d_pred[0], t.coords3d_true[0]],
-            util3d.plot3d_worker,
-            worker_args=[dataset.joint_info.stick_figure_edges],
-            worker_kwargs=dict(batched=False, interval=100, has_ground_truth=True),
-            every_n_steps=1, use_threading=False)
-        rate_limit_hook = session_hooks.rate_limit_hook(0.5)
-        hooks.append(plot_hook)
-        hooks.append(rate_limit_hook)
-
-    fetch_names = [
-        'image_path', 'coords3d_true_orig_cam', 'coords3d_pred_orig_cam', 'coords3d_true_world',
-        'coords3d_pred_world', 'activity_name', 'scene_name', 'joint_validity_mask']
-    fetch_tensors = {fetch_name: t[fetch_name] for fetch_name in fetch_names}
-
-    global_init_op = tf.compat.v1.global_variables_initializer()
-    local_init_op = tf.compat.v1.local_variables_initializer()
-
-    def init_fn(_, sess):
-        sess.run([global_init_op, local_init_op, test_counter.reset_op])
-
-    f = helpers.run_eval_loop(
-        fetches_to_collect=fetch_tensors, load_path=FLAGS.load_path,
-        checkpoint_dir=FLAGS.checkpoint_dir, hooks=hooks, init_fn=init_fn)
-    save_results(f)
-
-
-def save_results(f):
-    ordered_indices = np.argsort(f.image_path)
-    util.ensure_path_exists(FLAGS.pred_path)
-    logging.info(f'Saving predictions to {FLAGS.pred_path}')
-    np.savez(
-        FLAGS.pred_path,
-        image_path=f.image_path[ordered_indices],
-        coords3d_true=f.coords3d_true_orig_cam[ordered_indices],
-        coords3d_pred=f.coords3d_pred_orig_cam[ordered_indices],
-        coords3d_true_world=f.coords3d_true_world[ordered_indices],
-        coords3d_pred_world=f.coords3d_pred_world[ordered_indices],
-        activity_name=f.activity_name[ordered_indices],
-        scene_name=f.scene_name[ordered_indices],
-        joint_validity_mask=f.joint_validity_mask[ordered_indices],
-    )
-
-
-def build_graph(
-        learning_phase, n_epochs=None, shuffle=None, drop_remainder=None, rng=None, n_done_steps=0):
-    tfu.set_is_training(learning_phase == TRAIN)
-
-    t = AttrDict(global_step=tf.compat.v1.train.get_or_create_global_step())
-
+    #######
+    # TRAINING DATA
+    #######
     dataset3d = data.datasets3d.get_dataset(FLAGS.dataset)
-    examples = helpers.get_examples(dataset3d, learning_phase, FLAGS)
-    t.n_examples = len(examples)
-    phase_name = 'training' if tfu.is_training() else 'validation'
-    logging.info(f'Number of {phase_name} examples: {t.n_examples:,}')
+    joint_info3d = dataset3d.joint_info
+    examples3d = get_examples(dataset3d, TRAIN, FLAGS)
 
-    n_total_steps = None
-    if n_epochs is not None:
-        batch_size = FLAGS.batch_size if learning_phase == TRAIN else FLAGS.batch_size_test
-        n_total_steps = (len(examples) * n_epochs) // batch_size
+    dataset2d = data.datasets2d.get_dataset(FLAGS.dataset2d)
+    joint_info2d = dataset2d.joint_info
+    examples2d = [*dataset2d.examples[TRAIN], *dataset2d.examples[VALID]]
 
-    if rng is None:
-        rng = np.random.RandomState()
-
-    if tfu.is_training() and FLAGS.train_mixed:
-        dataset2d = data.datasets2d.get_dataset(FLAGS.dataset2d)
-        examples2d = [*dataset2d.examples[tfu.TRAIN], *dataset2d.examples[tfu.VALID]]
-        build_mixed_batch(
-            t, dataset3d, dataset2d, examples, examples2d, learning_phase,
-            batch_size3d=FLAGS.batch_size, batch_size2d=FLAGS.batch_size_2d,
-            shuffle=shuffle, rng=rng, max_unconsumed=FLAGS.max_unconsumed,
-            n_done_steps=n_done_steps, n_total_steps=n_total_steps)
+    if 'many' in FLAGS.dataset:
+        if 'aist' in FLAGS.dataset:
+            dataset_section_names = 'h36m muco-3dhp surreal panoptic aist_ sailvos'.split()
+            roundrobin_sizes = [8, 8, 8, 8, 8, 8]
+            roundrobin_sizes = [x * 2 for x in roundrobin_sizes]
+        else:
+            dataset_section_names = 'h36m muco-3dhp panoptic surreal sailvos'.split()
+            roundrobin_sizes = [9, 9, 9, 9, 9]
+        example_sections = build_dataset_sections(examples3d, dataset_section_names)
     else:
-        batch_size = FLAGS.batch_size if learning_phase == TRAIN else FLAGS.batch_size_test
-        helpers.build_input_batch(
-            t, examples, data.data_loading.load_and_transform3d,
-            (dataset3d.joint_info, learning_phase), learning_phase, batch_size,
-            FLAGS.workers, shuffle=shuffle, drop_remainder=drop_remainder, rng=rng,
-            max_unconsumed=FLAGS.max_unconsumed, n_done_steps=n_done_steps,
-            n_total_steps=n_total_steps)
-        (t.image_path, t.x, t.coords3d_true, t.coords2d_true, t.inv_intrinsics,
-         t.rot_to_orig_cam, t.rot_to_world, t.cam_loc, t.joint_validity_mask,
-         t.is_joint_in_fov, t.activity_name, t.scene_name) = t.batch
+        example_sections = [examples3d]
+        roundrobin_sizes = [FLAGS.batch_size]
 
-    if FLAGS.scale_recovery == 'metrabs':
-        model.metrabs.build_metrabs_model(dataset3d.joint_info, t)
-    elif FLAGS.scale_recovery == 'metro':
-        model.metro.build_metro_model(dataset3d.joint_info, t)
-    else:
-        model.twofive.build_25d_model(dataset3d.joint_info, t)
+    n_completed_steps = get_n_completed_steps(FLAGS.checkpoint_dir, FLAGS.load_path)
 
-    if 'coords3d_true' in t:
-        build_eval_metrics(t)
+    rng = np.random.RandomState(FLAGS.seed)
+    data2d = build_dataflow(
+        examples2d, data.data_loading.load_and_transform2d, (joint_info2d, TRAIN),
+        TRAIN, batch_size=FLAGS.batch_size_2d * n_repl, n_workers=FLAGS.workers,
+        rng=util.new_rng(rng), n_completed_steps=n_completed_steps,
+        n_total_steps=FLAGS.training_steps)
 
-    if learning_phase == TRAIN:
-        build_train_op(t)
-        build_summaries(t)
-    return t
+    data3d = build_dataflow(
+        example_sections, data.data_loading.load_and_transform3d, (joint_info3d, TRAIN),
+        tfu.TRAIN, batch_size=sum(roundrobin_sizes)//2 * n_repl,
+        n_workers=FLAGS.workers,
+        rng=util.new_rng(rng), n_completed_steps=n_completed_steps,
+        n_total_steps=FLAGS.training_steps, roundrobin_sizes=roundrobin_sizes)
 
+    data_train = tf.data.Dataset.zip((data3d, data2d))
+    data_train = data_train.map(lambda batch3d, batch2d: {**batch3d, **batch2d})
+    if not FLAGS.multi_gpu:
+        data_train = data_train.apply(tf.data.experimental.prefetch_to_device('GPU:0', 2))
 
-@tfu.in_name_scope('InputPipeline')
-def build_mixed_batch(
-        t, dataset3d, dataset2d, examples3d, examples2d, learning_phase,
-        batch_size3d=None, batch_size2d=None, shuffle=None, rng=None,
-        max_unconsumed=256, n_done_steps=0, n_total_steps=None):
-    if shuffle is None:
-        shuffle = learning_phase == TRAIN
+    opt = tf.data.Options()
+    opt.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    data_train = data_train.with_options(opt)
 
-    if rng is None:
-        rng = np.random.RandomState()
-    rng_2d = util.new_rng(rng)
-    rng_3d = util.new_rng(rng)
-
-    (t.image_path_2d, t.x_2d, t.coords2d_true2d,
-     t.joint_validity_mask2d) = helpers.build_input_batch(
-        t, examples2d, data.data_loading.load_and_transform2d,
-        (dataset2d.joint_info, learning_phase), learning_phase, batch_size2d, FLAGS.workers,
-        shuffle=shuffle, rng=rng_2d, max_unconsumed=max_unconsumed,
-        n_done_steps=n_done_steps, n_total_steps=n_total_steps)
-
-    (t.image_path, t.x, t.coords3d_true, t.coords2d_true, t.inv_intrinsics,
-     t.rot_to_orig_cam, t.rot_to_world, t.cam_loc, t.joint_validity_mask,
-     t.is_joint_in_fov, t.activity_name, t.scene_name) = helpers.build_input_batch(
-        t, examples3d, data.data_loading.load_and_transform3d,
-        (dataset3d.joint_info, learning_phase), learning_phase, batch_size3d, FLAGS.workers,
-        shuffle=shuffle, rng=rng_3d, max_unconsumed=max_unconsumed,
-        n_done_steps=n_done_steps, n_total_steps=n_total_steps)
-
-
-@tfu.in_name_scope('Optimizer')
-def build_train_op(t):
-    t.global_step = tf.compat.v1.train.get_or_create_global_step()
-    t.learning_rate = learning_rate_schedule(
-        t.global_step, t.n_examples / FLAGS.batch_size, FLAGS.learning_rate, FLAGS)
-
-    n_steps_total = t.n_examples / FLAGS.batch_size * FLAGS.epochs
-
-    # Formula as per AdamW paper [Loshchilov & Hutter ICLR'19, arXiv:1711.05101]
-    weight_decay = (FLAGS.weight_decay * (
-            t.learning_rate / FLAGS.learning_rate) / n_steps_total ** 0.5)
-    try:
-        AdamW = tensorflow_addons.optimizers.AdamW
-    except:
-        AdamW = tf.contrib.opt.AdamWOptimizer
-
-    t.optimizer = AdamW(
-        weight_decay=weight_decay, learning_rate=t.learning_rate, epsilon=FLAGS.epsilon)
-
-    trainable_vars = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES)
-    update_ops = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)
-    logging.info(f'Update op count: {len(update_ops)}')
-
-    def minimize(optimizer, loss, var_list, update_list, step=t.global_step):
-        gradients = tfu.gradients_with_loss_scaling(loss, var_list, 256)
-        gradients_and_vars = list(zip(gradients, var_list))
-        m = optimizer.apply_gradients(gradients_and_vars)
-        with tf.control_dependencies([
-            tf.compat.v1.train.get_or_create_global_step(), tf.compat.v1.train.get_global_step()]):
-            increment_global_step = tf.compat.v1.assign_add(step, 1)
-        return tf.group(m, *update_list, increment_global_step)
-
-    t.train_op = minimize(t.optimizer, t.loss, trainable_vars, update_ops)
-
-
-def learning_rate_schedule(global_step, steps_per_epoch, base_learning_rate, flags):
-    all_steps = flags.epochs * steps_per_epoch
-    n_phase2_steps = 2 / 25 * all_steps
-    n_phase1_steps = all_steps - n_phase2_steps
-
-    global_step_float = tf.cast(global_step, tf.float32)
-    phase1_lr = tf.compat.v1.train.exponential_decay(
-        tf.cast(base_learning_rate, tf.float32), global_step=global_step_float, decay_rate=1 / 3,
-        decay_steps=n_phase1_steps, staircase=False)
-
-    phase2_lr = tf.compat.v1.train.exponential_decay(
-        tf.cast(base_learning_rate / 30, tf.float32),
-        global_step=global_step_float - n_phase1_steps,
-        decay_rate=0.3, decay_steps=n_phase2_steps, staircase=False)
-
-    return tf.where(global_step_float < n_phase1_steps, phase1_lr, phase2_lr)
-
-
-@tfu.in_name_scope('EvalMetrics')
-def build_eval_metrics(t):
-    rootrelative_diff = tfu3d.root_relative(t.coords3d_pred - t.coords3d_true)
-    dist = tf.norm(rootrelative_diff, axis=-1)
-    t.mean_error = tfu.reduce_mean_masked(dist, t.joint_validity_mask)
-    t.coords3d_pred_procrustes = tfu3d.rigid_align(
-        t.coords3d_pred, t.coords3d_true,
-        joint_validity_mask=t.joint_validity_mask, scale_align=True)
-
-    rootrelative_diff_procrust = tfu3d.root_relative(t.coords3d_pred_procrustes - t.coords3d_true)
-    dist_procrustes = tf.norm(rootrelative_diff_procrust, axis=-1)
-    t.mean_error_procrustes = tfu.reduce_mean_masked(dist_procrustes, t.joint_validity_mask)
-
-    threshold = np.float32(150)
-    auc_score = tf.maximum(np.float32(0), 1 - dist / threshold)
-    t.auc_for_nms = tfu.reduce_mean_masked(auc_score, t.joint_validity_mask, axis=0)
-    t.mean_auc = tfu.reduce_mean_masked(auc_score, t.joint_validity_mask)
-
-    is_correct = tf.cast(dist <= threshold, tf.float32)
-    t.pck = tfu.reduce_mean_masked(is_correct, t.joint_validity_mask, axis=0)
-    t.mean_pck = tfu.reduce_mean_masked(is_correct, t.joint_validity_mask)
-
-
-def build_summaries(t):
-    t.epoch = t.global_step // (t.n_examples // FLAGS.batch_size)
-    opnames = 'epoch learning_rate mean_error mean_error_procrustes loss loss22d loss23d loss32d ' \
-              'loss3d loss3d_abs'.split()
-    scalar_ops = ({name: t[name] for name in opnames if name in t})
-    prefix = 'training' if tfu.is_training() else 'validation'
-    summaries = [tf.compat.v1.summary.scalar(f'{prefix}/{name}', op, collections=[])
-                 for name, op in scalar_ops.items()]
-    t.summary_op = tf.compat.v1.summary.merge(summaries)
-
-
-def make_training_hooks(t_train, t_valid):
-    saver = tf.compat.v1.train.Saver(max_to_keep=2, save_relative_paths=True)
-
-    checkpoint_state = tf.train.get_checkpoint_state(FLAGS.logdir)
-    if checkpoint_state:
-        saver.recover_last_checkpoints(checkpoint_state.all_model_checkpoint_paths)
-
-    global_step_tensor = tf.compat.v1.train.get_or_create_global_step()
-    checkpoint_hook = tf.estimator.CheckpointSaverHook(FLAGS.logdir, saver=saver, save_secs=30 * 60)
-    total_batch_size = FLAGS.batch_size * (2 if FLAGS.train_mixed else 1)
-    example_counter_hook = session_hooks.log_increment_per_sec(
-        'Training images', t_train.global_step * total_batch_size, every_n_secs=FLAGS.hook_seconds,
-        summary_output_dir=FLAGS.logdir)
-
-    i_epoch = t_train.global_step // (t_train.n_examples // FLAGS.batch_size)
-    logger_hook = session_hooks.logger_hook(
-        'Epoch {:03d}, global step {:07d}. Loss: {:.15e}',
-        [i_epoch, t_train.global_step, t_train.loss], every_n_steps=1)
-
-    hooks = [example_counter_hook, logger_hook, checkpoint_hook]
-
-    if FLAGS.epochs:
-        eta_hook = session_hooks.eta_hook(
-            n_total_steps=(t_train.n_examples * FLAGS.epochs) // FLAGS.batch_size,
-            every_n_secs=600, summary_output_dir=FLAGS.logdir)
-        hooks.append(eta_hook)
+    #######
+    # VALIDATION DATA
+    #######
+    examples3d_val = get_examples(dataset3d, VALID, FLAGS)
 
     if FLAGS.validate_period:
-        every_n_steps = (
-            int(np.round(FLAGS.validate_period * (t_train.n_examples // FLAGS.batch_size))))
-
-        max_valid_steps = np.ceil(t_valid.n_examples / FLAGS.batch_size_test)
-        summary_output_dir = FLAGS.logdir if FLAGS.tensorboard else None
-
-        metrics = [
-            EvaluationMetric(t_valid.mean_error, 'MPJPE', '.3f', is_higher_better=False),
-            EvaluationMetric(t_valid.mean_error_procrustes, 'MPJPE-procrustes', '.3f',
-                             is_higher_better=False),
-            EvaluationMetric(t_valid.mean_pck, '3DPCK@150mm', '.3%'),
-            EvaluationMetric(t_valid.mean_auc, 'AUC', '.3%'),
-        ]
-
-        validation_hook = session_hooks.validation_hook(
-            metrics, summary_output_dir=summary_output_dir, max_steps=max_valid_steps,
-            max_seconds=120, every_n_steps=every_n_steps, _step_tensor=global_step_tensor)
-        hooks.append(validation_hook)
-
-    if FLAGS.tensorboard:
-        other_summary_ops = [a for a in [tf.compat.v1.summary.merge_all()] if a is not None]
-        summary_hook = tf.estimator.SummarySaverHook(
-            save_steps=1, output_dir=FLAGS.logdir,
-            summary_op=tf.compat.v1.summary.merge([*other_summary_ops, t_train.summary_op]))
-        summary_hook = tfasync.PeriodicHookWrapper(
-            summary_hook, every_n_steps=10, step_tensor=global_step_tensor)
-        hooks.append(summary_hook)
-
-    if FLAGS.gui:
-        dataset = data.datasets3d.get_dataset(FLAGS.dataset)
-        plot_hook = session_hooks.send_to_worker_hook(
-            [tfu.std_to_nhwc(t_train.x[0]), t_train.coords3d_pred[0], t_train.coords3d_true[0]],
-            util3d.plot3d_worker, worker_args=[dataset.joint_info.stick_figure_edges],
-            worker_kwargs=dict(batched=False, interval=100), every_n_secs=FLAGS.hook_seconds,
-            use_threading=False)
-        hooks.append(plot_hook)
-        if 'coords3d_pred2d' in t_train:
-            plot_hook = session_hooks.send_to_worker_hook(
-                [tfu.std_to_nhwc(t_train.x_2d[0]), t_train.coords3d_pred2d[0],
-                 t_train.coords3d_pred2d[0]],
-                util3d.plot3d_worker, worker_args=[dataset.joint_info.stick_figure_edges],
-                worker_kwargs=dict(batched=False, interval=100, has_ground_truth=False),
-                every_n_secs=FLAGS.hook_seconds, use_threading=False)
-            hooks.append(plot_hook)
-
-    return hooks
-
-
-def get_init_fn():
-    if FLAGS.init == 'scratch':
-        return None
-    elif FLAGS.init != 'pretrained':
-        raise NotImplementedError
-
-    if FLAGS.architecture.startswith('resnet_v2'):
-        default_weight_subpath = f'{FLAGS.architecture}_2017_04_14/{FLAGS.architecture}.ckpt'
+        data_val = build_dataflow(
+            examples3d_val, data.data_loading.load_and_transform3d,
+            (joint_info3d, VALID), VALID, batch_size=FLAGS.batch_size_test * n_repl,
+            n_workers=FLAGS.workers, rng=util.new_rng(rng))
+        data_val = data_val.with_options(opt)
+        validation_steps = int(np.ceil(len(examples3d_val) / (FLAGS.batch_size_test * n_repl)))
     else:
-        raise Exception(
-            f'No default pretrained weights configured for architecture {FLAGS.architecture}')
+        data_val = None
+        validation_steps = None
 
-    if FLAGS.init_path:
-        weight_path = FLAGS.init_path
-        checkpoint_scope = f'MainPart/{FLAGS.architecture}'
+    #######
+    # MODEL
+    #######
+    with strategy.scope():
+        global_step = tf.Variable(n_completed_steps, dtype=tf.int32, trainable=False)
+        backbone = backbones.builder.build_backbone()
+
+        model_class = getattr(models, FLAGS.model_class)
+        trainer_class = getattr(models, FLAGS.model_class + 'Trainer')
+
+        bone_lengths = (
+            dataset3d.trainval_bones if FLAGS.train_on == 'trainval' else dataset3d.train_bones)
+        extra_args = [bone_lengths] if FLAGS.model_class.startswith('Model25D') else []
+        model = model_class(backbone, joint_info3d, *extra_args)
+        trainer = trainer_class(model, joint_info3d, joint_info2d, global_step)
+        trainer.compile(optimizer=build_optimizer(global_step, n_repl))
+        model.optimizer = trainer.optimizer
+
+    #######
+    # CHECKPOINTING
+    #######
+    ckpt = tf.train.Checkpoint(model=model)
+    ckpt_manager = tf.train.CheckpointManager(
+        ckpt, directory=FLAGS.checkpoint_dir, max_to_keep=2, step_counter=global_step,
+        checkpoint_interval=FLAGS.checkpoint_period)
+    restore_if_ckpt_available(ckpt, ckpt_manager, global_step, FLAGS.init_path)
+    trainer.optimizer.iterations.assign(n_completed_steps)
+
+    #######
+    # CALLBACKS
+    #######
+    cbacks = [
+        keras.callbacks.LambdaCallback(
+            on_train_begin=lambda logs: trainer._train_counter.assign(n_completed_steps),
+            on_train_batch_end=lambda batch, logs: ckpt_manager.save(global_step)),
+        callbacks.ProgbarCallback(n_completed_steps, FLAGS.training_steps),
+        callbacks.WandbCallback(global_step),
+        callbacks.TensorBoardCallback(global_step)
+    ]
+
+    if FLAGS.finetune_in_inference_mode:
+        switch_step = FLAGS.training_steps - FLAGS.finetune_in_inference_mode
+        c = callbacks.SwitchToInferenceModeCallback(global_step, switch_step)
+        cbacks.append(c)
+
+    #######
+    # FITTING
+    #######
+    try:
+        trainer.fit(
+            data_train, steps_per_epoch=1, initial_epoch=n_completed_steps,
+            epochs=FLAGS.training_steps, verbose=1 if sys.stdout.isatty() else 0,
+            callbacks=cbacks, validation_data=data_val, validation_freq=FLAGS.validate_period,
+            validation_steps=validation_steps)
+        model.save(
+            f'{FLAGS.checkpoint_dir}/model', include_optimizer=False, overwrite=True,
+            options=tf.saved_model.SaveOptions(experimental_custom_gradients=True))
+    except KeyboardInterrupt:
+        logger.info('Training interrupted.')
+    except tf.errors.ResourceExhaustedError:
+        logger.info('Resource Exhausted!')
+    finally:
+        ckpt_manager.save(global_step, check_interval=False)
+        logger.info('Saved checkpoint.')
+
+
+def build_optimizer(global_step, n_replicas):
+    def weight_decay():
+        lr_ratio = lr_schedule(global_step) / FLAGS.base_learning_rate
+        # Decay the weight decay itself over time the same way as the learning rate is decayed.
+        # Division by sqrt(num_training_steps) is taken from the original AdamW paper.
+        return FLAGS.weight_decay * lr_ratio / np.sqrt(FLAGS.training_steps)
+
+    def lr():
+        return lr_schedule(global_step) / tf.sqrt(tf.cast(n_replicas, tf.float32))
+
+    optimizer = tfa.optimizers.AdamW(weight_decay=weight_decay, learning_rate=lr, epsilon=1e-8)
+    # Make sure these exist so checkpoints work properly
+    optimizer.iterations
+    optimizer.beta_1
+
+    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(
+        optimizer, dynamic=False, initial_scale=128)
+    return optimizer
+
+
+def build_dataset_sections(examples, section_names):
+    sections = {name: [] for name in section_names}
+    for ex in examples:
+        for name in section_names:
+            if name in ex.image_path.lower():
+                sections[name].append(ex)
+                break
+        else:
+            raise RuntimeError
+    return [sections[name] for name in section_names]
+
+
+@tf.function
+def lr_schedule(global_step):
+    training_steps = FLAGS.training_steps
+    n_phase1_steps = 0.92 * training_steps
+    n_phase2_steps = training_steps - n_phase1_steps
+    global_step_float = tf.cast(global_step, tf.float32)
+    b = tf.constant(FLAGS.base_learning_rate, tf.float32)
+
+    if global_step_float < n_phase1_steps:
+        return tf.keras.optimizers.schedules.ExponentialDecay(
+            b, decay_rate=1 / 3, decay_steps=n_phase1_steps, staircase=False)(global_step_float)
     else:
-        weight_path = f'{paths.DATA_ROOT}/pretrained/{default_weight_subpath}'
-        if not os.path.exists(weight_path) and not os.path.exists(weight_path + '.index'):
-            download_pretrained_weights()
-        checkpoint_scope = FLAGS.architecture
-
-    loaded_scope = f'MainPart/{FLAGS.architecture}'
-    do_not_load = ['Adam', 'Momentum', 'noload']
-    if FLAGS.init_logits_random:
-        do_not_load.append('logits')
-
-    return tfu.make_pretrained_weight_loader(
-        weight_path, loaded_scope, checkpoint_scope, do_not_load)
+        return tf.keras.optimizers.schedules.ExponentialDecay(
+            b * tf.cast(1 / 30, tf.float32), decay_rate=0.3, decay_steps=n_phase2_steps,
+            staircase=False)(global_step_float - n_phase1_steps)
 
 
-def download_pretrained_weights():
-    import urllib.request
-    import tarfile
+def dummy_strategy():
+    @contextlib.contextmanager
+    def dummy_scope():
+        yield
 
-    logging.info(f'Downloading ImageNet pretrained weights for {FLAGS.architecture}')
-    filename = f'{FLAGS.architecture}_2017_04_14.tar.gz'
-    target_path = f'{paths.DATA_ROOT}/pretrained/{FLAGS.architecture}_2017_04_14/{filename}'
-    util.ensure_path_exists(target_path)
-    urllib.request.urlretrieve(f'http://download.tensorflow.org/models/{filename}', target_path)
-    with tarfile.open(target_path) as f:
-        f.extractall(f'{paths.DATA_ROOT}/pretrained/{FLAGS.architecture}_2017_04_14')
-    os.remove(target_path)
-
-
-def get_number_of_already_completed_steps(logdir, load_path):
-    """Find out how many training steps have already been completed
-     in case we are resuming training from a checkpoint file."""
-
-    if load_path is not None:
-        return int(re.search(r'model.ckpt-(?P<num>\d+)(\.|$)', os.path.basename(load_path))['num'])
-
-    if os.path.exists(f'{logdir}/checkpoint'):
-        text = util.read_file(f'{logdir}/checkpoint')
-        return int(re.search(r'model_checkpoint_path: "model.ckpt-(?P<num>\d+)"', text)['num'])
-    else:
-        return 0
+    return attrdict.AttrDict(scope=dummy_scope, num_replicas_in_sync=1)
 
 
 def export():
-    logging.info('Exporting model file.')
-    tf.compat.v1.reset_default_graph()
+    dataset3d = data.datasets3d.get_dataset(FLAGS.dataset)
+    ji = dataset3d.joint_info
+    del dataset3d
+    backbone = backbones.builder.build_backbone()
+    model = models.metrabs.Metrabs(backbone, ji)
 
-    t = attrdict.AttrDict()
-    t.x = tf.compat.v1.placeholder(
-        shape=[None, FLAGS.proc_side, FLAGS.proc_side, 3], dtype=tfu.get_dtype())
-    t.x = tfu.nhwc_to_std(t.x)
-
-    is_absolute_model = FLAGS.scale_recovery in ('metrabs',)
-
-    if is_absolute_model:
-        intrinsics_tensor = tf.compat.v1.placeholder(shape=[None, 3, 3], dtype=tf.float32)
-        t.inv_intrinsics = tf.linalg.inv(intrinsics_tensor)
-    else:
-        intrinsics_tensor = None
-
-    joint_info = data.datasets3d.get_dataset(FLAGS.dataset).joint_info
-
-    if FLAGS.scale_recovery == 'metrabs':
-        model.metrabs.build_metrabs_inference_model(joint_info, t)
-    elif FLAGS.scale_recovery == 'metro':
-        model.metro.build_metro_inference_model(joint_info, t)
-    else:
-        model.twofive.build_25d_inference_model(joint_info, t)
-
-    # Convert to the original joint order as defined in the original datasets
-    # (i.e. put the pelvis back to its place from the last position,
-    # because this codebase normally uses the last position for the pelvis in all cases for
-    # consistency)
-    if FLAGS.dataset == 'many':
-        selected_joint_ids = [23, *range(23)] if FLAGS.export_smpl else [*range(73)]
-    elif FLAGS.dataset == 'h36m':
-        selected_joint_ids = [16, *range(16)]
-    else:
-        assert FLAGS.dataset in ('mpi_inf_3dhp', 'mupots') or 'muco' in FLAGS.dataset
-        selected_joint_ids = [*range(14), 17, 14, 15]
-
-    t.coords3d_pred = tf.gather(t.coords3d_pred, selected_joint_ids, axis=1)
-    joint_info = joint_info.select_joints(selected_joint_ids)
+    ckpt = tf.train.Checkpoint(model=model)
+    ckpt_manager = tf.train.CheckpointManager(ckpt, FLAGS.checkpoint_dir, None)
+    restore_if_ckpt_available(ckpt, ckpt_manager, expect_partial=True)
 
     if FLAGS.load_path:
         load_path = util.ensure_absolute_path(FLAGS.load_path, FLAGS.checkpoint_dir)
     else:
-        checkpoint = tf.train.get_checkpoint_state(FLAGS.checkpoint_dir)
-        load_path = checkpoint.model_checkpoint_path
+        ckpt = tf.train.get_checkpoint_state(FLAGS.checkpoint_dir)
+        load_path = ckpt.model_checkpoint_path
+
     checkpoint_dir = os.path.dirname(load_path)
     out_path = util.ensure_absolute_path(FLAGS.export_file, checkpoint_dir)
-
-    sm = tf.compat.v1.saved_model
-    with tf.compat.v1.Session() as sess:
-        saver = tf.compat.v1.train.Saver()
-        saver.restore(sess, load_path)
-        inputs = (dict(image=t.x, intrinsics=intrinsics_tensor) if is_absolute_model
-                  else dict(image=t.x))
-
-        signature_def = sm.signature_def_utils.predict_signature_def(
-            inputs=inputs, outputs=dict(poses=t.coords3d_pred))
-        os.mkdir(out_path)
-        builder = sm.builder.SavedModelBuilder(out_path)
-        builder.add_meta_graph_and_variables(
-            sess, ['serve'], signature_def_map=dict(serving_default=signature_def))
-        builder.save()
-
-    tf.compat.v1.reset_default_graph()
-    tf.compat.v1.enable_eager_execution()
-    crop_model = tf.saved_model.load(out_path)
-    shutil.rmtree(out_path)
-
-    wrapper_class = (ExportedAbsoluteModel if is_absolute_model else ExportedRootRelativeModel)
-    wrapped_model = wrapper_class(crop_model, joint_info)
-    tf.saved_model.save(wrapped_model, out_path)
+    model.save(
+        out_path, include_optimizer=False, overwrite=True,
+        options=tf.saved_model.SaveOptions(experimental_custom_gradients=True))
 
 
-class ExportedAbsoluteModel(tf.Module):
-    def __init__(self, crop_model, joint_info):
-        super().__init__()
-        self.crop_model = crop_model
-        self.predict_crop = self.crop_model.signatures['serving_default']
-        self.joint_names = tf.Variable(np.array(joint_info.names), trainable=False)
-        self.joint_edges = tf.Variable(np.array(joint_info.stick_figure_edges), trainable=False)
+def predict():
+    dataset3d = data.datasets3d.get_dataset(FLAGS.dataset)
+    backbone = backbones.builder.build_backbone()
+    model_class = getattr(models, FLAGS.model_class)
+    trainer_class = getattr(models, FLAGS.model_class + 'Trainer')
+    model_joint_info = data.datasets3d.get_joint_info(FLAGS.model_joints)
 
-        @tf.function(input_signature=[
-            tf.TensorSpec(shape=(None, None, None, 3), dtype=tfu.get_dtype()),
-            tf.TensorSpec(shape=(None, 3, 3), dtype=tf.float32)])
-        def __call__(image, intrinsic_matrix):
-            return self.predict_crop(image=image, intrinsics=intrinsic_matrix)['poses']
+    if FLAGS.model_class.startswith('Model25D'):
+        bone_dataset = data.datasets3d.get_dataset(FLAGS.bone_length_dataset)
+        bone_lengths = (
+            bone_dataset.trainval_bones if FLAGS.train_on == 'trainval'
+            else bone_dataset.train_bones)
+        extra_args = [bone_lengths]
+    else:
+        extra_args = []
+    model = model_class(backbone, model_joint_info, *extra_args)
+    trainer = trainer_class(model, model_joint_info)
+    trainer.predict_tensor_names = [
+        'coords3d_rel_pred', 'coords3d_pred_abs', 'rot_to_world', 'cam_loc', 'image_path']
 
-        self.__call__ = __call__
+    if FLAGS.viz:
+        trainer.predict_tensor_names += ['image', 'coords3d_true']
+
+    ckpt = tf.train.Checkpoint(model=model)
+    ckpt_manager = tf.train.CheckpointManager(ckpt, FLAGS.checkpoint_dir, None)
+    restore_if_ckpt_available(ckpt, ckpt_manager, expect_partial=True)
+
+    examples3d_test = get_examples(dataset3d, tfu.TEST, FLAGS)
+    data_test = build_dataflow(
+        examples3d_test, data.data_loading.load_and_transform3d,
+        (dataset3d.joint_info, TEST), TEST, batch_size=FLAGS.batch_size_test,
+        n_workers=FLAGS.workers)
+    n_predict_steps = int(np.ceil(len(examples3d_test) / FLAGS.batch_size_test))
+
+    r = trainer.predict(
+        data_test, verbose=1 if sys.stdout.isatty() else 0, steps=n_predict_steps)
+    r = attrdict.AttrDict(r)
+    util.ensure_path_exists(FLAGS.pred_path)
+
+    logger.info(f'Saving predictions to {FLAGS.pred_path}')
+    try:
+        coords3d_pred = r.coords3d_pred_abs
+    except AttributeError:
+        coords3d_pred = r.coords3d_rel_pred
+
+    coords3d_pred_world = tf.einsum(
+        'nCc, njc->njC', r.rot_to_world, coords3d_pred) + tf.expand_dims(r.cam_loc, 1)
+    coords3d_pred_world = models.util.select_skeleton(
+        coords3d_pred_world, model_joint_info, FLAGS.output_joints).numpy()
+    np.savez(FLAGS.pred_path, image_path=r.image_path, coords3d_pred_world=coords3d_pred_world)
 
 
-class ExportedRootRelativeModel(tf.Module):
-    def __init__(self, crop_model, joint_info):
-        super().__init__()
-        self.crop_model = crop_model
-        self.predict_crop = self.crop_model.signatures['serving_default']
-        self.joint_names = tf.Variable(np.array(joint_info.names), trainable=False)
-        self.joint_edges = tf.Variable(np.array(joint_info.stick_figure_edges), trainable=False)
+def build_dataflow(
+        examples, load_fn, extra_args, learning_phase, batch_size, n_workers, rng=None,
+        n_completed_steps=0, n_total_steps=None, n_test_epochs=1, roundrobin_sizes=None):
+    if learning_phase == tfu.TRAIN:
+        n_total_items = int(n_total_steps * batch_size if n_total_steps is not None else None)
+    elif learning_phase == tfu.VALID:
+        n_total_items = None
+    else:
+        n_total_items = int(len(examples) * n_test_epochs)
 
-    @tf.function(input_signature=[tf.TensorSpec(shape=(None, None, None, 3), dtype=tf.uint8)])
-    def __call__(self, image):
-        return self.predict_crop(image=image)['poses']
+    dataset = parallel_preproc.parallel_map_as_tf_dataset(
+        load_fn, examples, shuffle_before_each_epoch=(learning_phase == tfu.TRAIN),
+        extra_args=extra_args, n_workers=n_workers, rng=rng, max_unconsumed=batch_size * 2,
+        n_completed_items=n_completed_steps * batch_size, n_total_items=n_total_items,
+        roundrobin_sizes=roundrobin_sizes)
+    return dataset.batch(batch_size, drop_remainder=(learning_phase == tfu.TRAIN))
+
+
+def get_examples(dataset, learning_phase, flags):
+    if learning_phase == tfu.TRAIN:
+        str_example_phase = flags.train_on
+    elif learning_phase == tfu.VALID:
+        str_example_phase = flags.validate_on
+    elif learning_phase == tfu.TEST:
+        str_example_phase = flags.test_on
+    else:
+        raise Exception(f'No such learning_phase as {learning_phase}')
+
+    if str_example_phase == 'train':
+        examples = dataset.examples[tfu.TRAIN]
+    elif str_example_phase == 'valid':
+        examples = dataset.examples[tfu.VALID]
+    elif str_example_phase == 'test':
+        examples = dataset.examples[tfu.TEST]
+    elif str_example_phase == 'trainval':
+        examples = [*dataset.examples[tfu.TRAIN], *dataset.examples[tfu.VALID]]
+    else:
+        raise Exception(f'No such phase as {str_example_phase}')
+    return examples
+
+
+def get_n_completed_steps(logdir, load_path):
+    if load_path is not None:
+        return int(re.search('ckpt-(?P<num>\d+)', os.path.basename(load_path))['num'])
+
+    if os.path.exists(f'{logdir}/checkpoint'):
+        text = util.read_file(f'{logdir}/checkpoint')
+        return int(re.search('model_checkpoint_path: "ckpt-(?P<num>\d+)"', text)['num'])
+    else:
+        return 0
+
+
+def restore_if_ckpt_available(
+        ckpt, ckpt_manager, global_step_var=None, initial_checkpoint_path=None,
+        expect_partial=False):
+    resuming_checkpoint_path = FLAGS.load_path
+    if resuming_checkpoint_path:
+        if resuming_checkpoint_path.endswith('.index'):
+            resuming_checkpoint_path = os.path.splitext(resuming_checkpoint_path)[0]
+        if not os.path.isabs(resuming_checkpoint_path):
+            resuming_checkpoint_path = os.path.join(FLAGS.checkpoint_dir, resuming_checkpoint_path)
+    else:
+        resuming_checkpoint_path = ckpt_manager.latest_checkpoint
+
+    load_path = resuming_checkpoint_path if resuming_checkpoint_path else initial_checkpoint_path
+    if load_path:
+        s = ckpt.restore(load_path)
+        if expect_partial:
+            s.expect_partial()
+
+    if initial_checkpoint_path and not resuming_checkpoint_path:
+        global_step_var.assign(0)
+
+
+def main():
+    init.initialize()
+
+    if FLAGS.train:
+        train()
+    elif FLAGS.predict:
+        predict()
+    elif FLAGS.export_file:
+        export()
 
 
 if __name__ == '__main__':

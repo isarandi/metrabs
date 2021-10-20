@@ -1,6 +1,6 @@
 import functools
 import itertools
-import logging
+from options import logger
 
 import PIL.Image
 import cv2
@@ -54,6 +54,12 @@ def video_extents(filepath):
         return np.asarray(reader.get_meta_data()['source_size'])
 
 
+def video_fps(filepath):
+    with imageio.get_reader(filepath) as reader:
+        fps = reader.get_meta_data()['fps']
+        return fps
+
+
 def rectangle(im, pt1, pt2, color, thickness):
     cv2.rectangle(im, rounded_int_tuple(pt1), rounded_int_tuple(pt2), color, thickness)
 
@@ -65,7 +71,7 @@ def line(im, p1, p2, *args, **kwargs):
     try:
         cv2.line(im, rounded_int_tuple(p1), rounded_int_tuple(p2), *args, **kwargs)
     except OverflowError:
-        logging.warning('Overflow in rounded_int_tuple!')
+        logger.warning('Overflow in rounded_int_tuple!')
 
 
 def draw_box(im, box, color=(255, 0, 0), thickness=5):
@@ -139,7 +145,7 @@ if use_libjpeg_turbo:
         try:
             return jpeg4py.JPEG(path).decode(dst)
         except jpeg4py.JPEGRuntimeError:
-            logging.error(f'Could not load image at {path}, JPEG error.')
+            logger.error(f'Could not load image at {path}, JPEG error.')
             raise
 else:
     def imread_jpeg(path, dst=None):
@@ -207,8 +213,8 @@ def paste_over(im_src, im_dst, alpha, center, inplace=False):
 
 def adjust_gamma_cuda(image, gamma, inplace=False):
     if inplace:
-        return get_gamma_lookup_table_cuda(gamma).transform(image, dst=image)
-    return get_gamma_lookup_table_cuda(gamma).transform(image)
+        return get_gamma_lookup_table_cuda(gamma).warp_single_image(image, dst=image)
+    return get_gamma_lookup_table_cuda(gamma).warp_single_image(image)
 
 
 def adjust_gamma(image, gamma, inplace=False):
@@ -298,3 +304,17 @@ def largest_connected_component(mask):
     obj_box = stats[largest_area_label, :4]
 
     return obj_mask, np.array(obj_box)
+
+
+def transform_video(inp_path, out_path, process_frame_fn, **kwargs):
+    util.ensure_path_exists(out_path)
+    with imageio.get_reader(inp_path) as reader:
+        fps = reader.get_meta_data()['fps']
+        with imageio.get_writer(out_path, fps=fps, codec='h264', **kwargs) as writer:
+            for frame in util.progressbar(reader):
+                writer.append_data(process_frame_fn(frame))
+
+
+def num_frames_of_video(path):
+    with imageio.get_reader(path) as vid:
+        return vid.get_meta_data()['nframes']

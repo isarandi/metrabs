@@ -1,19 +1,12 @@
-import functools
-import logging
 import multiprocessing as mp
-import re
 
-import attrdict
 import numpy as np
 import tensorflow as tf
 
 import util
 
-_IS_TRAINING = None
 _DATA_FORMAT = None
 _DTYPE = None
-
-_COUNTERS = {}
 
 TRAIN = 0
 VALID = 1
@@ -31,7 +24,7 @@ def expand_dims(arr, axes):
        X   X   X   X   X    <- current elements of `arr.shape`
     -6  -5  -4  -3  -2  -1  <- meaning of negative numbers in `axes`
     """
-    ndims = arr.get_shape().ndims
+    ndims = arr.shape.rank
     # convert negative indices to positive and sort descending
     axes = sorted([ax if ax >= 0 else ndims + ax + 1 for ax in axes], reverse=True)
     for ax in axes:
@@ -39,7 +32,7 @@ def expand_dims(arr, axes):
     return arr
 
 
-def reduce_mean_masked(input_tensor, is_valid, axis=None, keepdims=False, try_fast=True):
+def reduce_mean_masked(input_tensor, is_valid, axis=None, keepdims=False, try_fast=False):
     """Compute the mean of elements across dimensions of a tensor, ignoring elements if
     the corresponding element in `mask` is False.
 
@@ -55,11 +48,9 @@ def reduce_mean_masked(input_tensor, is_valid, axis=None, keepdims=False, try_fa
 
     if axis is None and not keepdims:
         return tf.reduce_mean(tf.boolean_mask(input_tensor, is_valid))
-
-    n_new_dims = input_tensor.get_shape().ndims - is_valid.get_shape().ndims
+    n_new_dims = input_tensor.shape.rank - is_valid.shape.rank
     is_valid = expand_dims(is_valid, [-1] * n_new_dims)
-    is_valid = broadcast_like(is_valid, input_tensor)
-    replaced = tf.where(is_valid, input_tensor, tf.zeros_like(input_tensor))
+    replaced = tf.where(is_valid, input_tensor, tf.constant(0, input_tensor.dtype))
     sum_valid = tf.reduce_sum(replaced, axis=axis, keepdims=keepdims)
     n_valid = tf.math.count_nonzero(
         is_valid, axis=axis, keepdims=keepdims, dtype=input_tensor.dtype)
@@ -67,20 +58,19 @@ def reduce_mean_masked(input_tensor, is_valid, axis=None, keepdims=False, try_fa
 
 
 def mean_stdev_masked(input_tensor, is_valid, items_axis, dimensions_axis, fixed_ref=None):
-    n_new_dims = input_tensor.get_shape().ndims - is_valid.get_shape().ndims
-    is_valid = expand_dims(is_valid, [-1] * n_new_dims)
-    is_valid_b = broadcast_like(is_valid, input_tensor)
-
     if fixed_ref is not None:
         mean = fixed_ref
     else:
-        mean = reduce_mean_masked(input_tensor, is_valid_b, axis=items_axis, keepdims=True)
+        mean = reduce_mean_masked(input_tensor, is_valid, axis=items_axis, keepdims=True)
     centered = input_tensor - mean
+
+    n_new_dims = input_tensor.shape.rank - is_valid.shape.rank
+    is_valid = expand_dims(is_valid, [-1] * n_new_dims)
     n_valid = tf.math.count_nonzero(
         is_valid, axis=items_axis, keepdims=True, dtype=input_tensor.dtype)
 
     sum_of_squared_deviations = reduce_sum_masked(
-        tf.square(centered), is_valid_b, axis=[items_axis, dimensions_axis], keepdims=True)
+        tf.square(centered), is_valid, axis=[items_axis, dimensions_axis], keepdims=True)
 
     stdev = tf.sqrt(tf.math.divide_no_nan(sum_of_squared_deviations, n_valid) + 1e-10)
     return mean, stdev
@@ -97,18 +87,14 @@ def reduce_sum_masked(input_tensor, is_valid, axis=None, keepdims=False):
     if axis is None and not keepdims:
         return tf.reduce_sum(tf.boolean_mask(input_tensor, is_valid))
 
-    n_new_dims = input_tensor.get_shape().ndims - is_valid.get_shape().ndims
-    for i in range(n_new_dims):
-        is_valid = tf.expand_dims(is_valid, -1)
-    is_valid = is_valid & (tf.ones_like(input_tensor) > 0)
-    is_valid = broadcast_like(is_valid, input_tensor)
-    replaced = tf.where(is_valid, input_tensor, tf.zeros_like(input_tensor))
-
+    n_new_dims = input_tensor.shape.rank - is_valid.shape.rank
+    is_valid = expand_dims(is_valid, [-1] * n_new_dims)
+    replaced = tf.where(is_valid, input_tensor, tf.constant(0, input_tensor.dtype))
     return tf.reduce_sum(replaced, axis=axis, keepdims=keepdims)
 
 
 def static_shape(tensor):
-    return tensor.get_shape().as_list()
+    return tensor.shape.as_list()
 
 
 def static_n_channels(tensor):
@@ -116,7 +102,7 @@ def static_n_channels(tensor):
 
 
 def static_image_shape(tensor):
-    if data_format() == 'NHWC':
+    if get_data_format() == 'NHWC':
         return static_shape(tensor)[1:3]
     else:
         return static_shape(tensor)[2:4]
@@ -126,17 +112,7 @@ def dynamic_batch_size(tensor):
     return tf.shape(tensor)[0]
 
 
-
-def set_is_training(b):
-    global _IS_TRAINING
-    _IS_TRAINING = b
-
-
-def is_training():
-    return _IS_TRAINING
-
-
-def data_format():
+def get_data_format():
     return _DATA_FORMAT
 
 
@@ -166,7 +142,6 @@ def image_axes():
     return _DATA_FORMAT.index('H'), _DATA_FORMAT.index('W')
 
 
-
 def count_trainable_params():
     return sum(np.prod(static_shape(var)) for var in tf.compat.v1.trainable_variables())
 
@@ -174,14 +149,13 @@ def count_trainable_params():
 def py_func_with_shapes(func, inp=None, output_types=None, output_shapes=None, name=None):
     result = tf.numpy_function(func, inp, output_types, name)
     if isinstance(output_types, (list, tuple)):
-        for t, s in zip(result, output_shapes):
-            t.set_shape(s)
+        # for t, s in zip(result, output_shapes):
+        #    t.set_shape(s)
         return tuple(result)
     else:
         assert not isinstance(result, (list, tuple))
         result.set_shape(output_shapes)
         return result
-
 
 
 def get_shapes_and_tf_dtypes(thing):
@@ -197,7 +171,7 @@ def get_shapes_and_tf_dtypes(thing):
 # NHWC <-> NCHW conversions
 def nhwc_to_nchw(x):
     if isinstance(x, tf.Tensor):
-        ndims = x.get_shape().ndims
+        ndims = x.shape.rank
         if ndims == 3:
             return tf.transpose(x, [2, 0, 1])
         elif ndims == 4:
@@ -228,7 +202,7 @@ def nhwc_to_nchw(x):
 
 def nchw_to_nhwc(x):
     if isinstance(x, tf.Tensor):
-        ndims = x.get_shape().ndims
+        ndims = x.shape.rank
         if ndims == 3:
             return tf.transpose(x, [1, 2, 0])
         elif ndims == 4:
@@ -286,21 +260,6 @@ def std_to_nchw(x):
     return convert_data_format(x, dst_format='NCHW')
 
 
-def get_or_create_counter(name):
-    global _COUNTERS
-    try:
-        return _COUNTERS[name]
-    except KeyError:
-        var = tf.compat.v1.get_local_variable(
-            f'counters/{name}', shape=[], dtype=tf.int64, initializer=tf.zeros_initializer())
-
-        counter = attrdict.AttrDict(
-            name=name, var=var, reset_op=tf.compat.v1.assign(var, 0),
-            increment_op=tf.compat.v1.assign_add(var, 1))
-        _COUNTERS[name] = counter
-        return counter
-
-
 _pool = None
 
 
@@ -321,164 +280,123 @@ def get_pool(n_workers_if_uninitialized, flags=None):
     return _pool
 
 
-def gradients_with_loss_scaling(loss, variables, loss_scale=128):
-    """Gradient calculation with loss scaling to improve numerical stability
-    when training with float16. Gradients are typically very small and may fall out of the
-    float16 range and underflow to 0. This shifts the gradients a larger scale during backprop
-    and then scales them back at the end.
-    """
-    gradients = tf.gradients(
-        loss * loss_scale, variables, gate_gradients=tf.compat.v1.train.Optimizer.GATE_GRAPH)
-    return [tf.cast(g, tf.float32) / loss_scale if g is not None else None for g in gradients]
-
-
-def in_variable_scope(default_name, mixed_precision=True):
-    """Puts the decorated function in a TF variable scope with the provided default name.
-    The function also gains two extra arguments: "scope" and "reuse" which get passed to
-    tf.compat.v1.variable_scope.
-    """
-
-    def decorator(f):
-        @functools.wraps(f)
-        def decorated(*args, scope=None, reuse=None, **kwargs):
-            with tf.compat.v1.variable_scope(
-                    scope, default_name, reuse=reuse,
-                    custom_getter=mixed_precision_getter if mixed_precision else None):
-                return f(*args, **kwargs)
-
-        return decorated
-
-    return decorator
-
-
-def mixed_precision_getter(
-        getter, name, shape=None, dtype=None, initializer=None, regularizer=None, trainable=True,
-        *args, **kwargs):
-    """Custom variable getter that forces trainable variables to be stored in
-    float32 precision and then casts them to the compute precision."""
-    # print(f'mixed prec asked for {dtype} ({name})')
-    storage_dtype = tf.float32 if trainable else dtype
-    variable = getter(
-        name, shape, dtype=storage_dtype, initializer=initializer, regularizer=regularizer,
-        trainable=trainable, *args, **kwargs)
-
-    if storage_dtype != dtype:
-        return tf.cast(variable, dtype)
-
-    return variable
-
-
-def in_name_scope(default_name):
-    """Puts the decorated function in a name scope with the provided default name.
-    The function also gains an extra argument "scope" which gets passed to tf.name_scope.
-    """
-
-    def wrapper(f):
-        @functools.wraps(f)
-        def wrapped(*args, scope=None, **kwargs):
-            name = scope if scope is not None else default_name
-            with tf.name_scope(name):
-                return f(*args, **kwargs)
-
-        return wrapped
-
-    return wrapper
-
-
-def broadcast_like(tensor, target_tensor):
-    if tensor.dtype == tf.bool:
-        return tf.logical_and(tensor, tf.ones_like(target_tensor) > 0)
-    else:
-        return tensor + tf.zeros_like(target_tensor, dtype=tensor.dtype)
-
-
 def softmax(target, axis=-1):
-    with tf.name_scope('softmax'):
-        max_along_axis = tf.reduce_max(target, axis, keepdims=True)
-        exponentiated = tf.exp(target - max_along_axis)
-        normalizer_denominator = tf.reduce_sum(exponentiated, axis, keepdims=True)
-        return exponentiated / normalizer_denominator
+    max_along_axis = tf.reduce_max(target, axis, keepdims=True)
+    exponentiated = tf.exp(target - max_along_axis)
+    denominator = tf.reduce_sum(exponentiated, axis, keepdims=True)
+    return exponentiated / denominator
 
 
 def soft_argmax(inp, axis):
-    softmaxed = softmax(inp, axis=axis)
-    return tf.stack(decode_heatmap(softmaxed, axis), axis=-1)
+    return decode_heatmap(softmax(inp, axis=axis), axis=axis)
 
 
-def decode_heatmap(inp, axis=-1):
-    input_shape = inp.get_shape().as_list()
-    ndims = len(input_shape)
-
-    def relative_coords_along_axis(ax):
-        grid_shape = [1] * ndims
-        grid_shape[ax] = input_shape[ax]
-        grid = tf.reshape(tf.linspace(0.0, 1.0, input_shape[ax]), grid_shape)
-        return tf.cast(grid, inp.dtype)
-
-    # Single axis:
+def decode_heatmap(inp, axis=-1, output_coord_axis=-1):
     if not isinstance(axis, (tuple, list)):
-        return tf.reduce_sum(relative_coords_along_axis(axis) * inp, axis=axis)
+        axis = [axis]
 
-    # Multiple axes.
     # Convert negative axes to the corresponding positive index (e.g. -1 means last axis)
-    heatmap_axes = [ax if ax >= 0 else ndims + ax + 1 for ax in axis]
+    heatmap_axes = [ax if ax >= 0 else inp.shape.rank + ax + 1 for ax in axis]
     result = []
     for ax in heatmap_axes:
         other_heatmap_axes = [other_ax for other_ax in heatmap_axes if other_ax != ax]
-        summed_over_other_axes = tf.reduce_sum(inp, axis=other_heatmap_axes, keepdims=True)
-        coords = relative_coords_along_axis(ax)
-        decoded = tf.reduce_sum(coords * summed_over_other_axes, axis=ax, keepdims=True)
-        result.append(tf.squeeze(decoded, heatmap_axes))
-
-    return result
-
-
-def make_pretrained_weight_loader(pretrained_path, loaded_scope, checkpoint_scope, excluded_parts):
-    var_list = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.GLOBAL_VARIABLES,
-                                           scope=loaded_scope)
-    var_dict = {v.op.name[v.op.name.index(checkpoint_scope):]: v for v in var_list}
-
-    new_var_dicts = []
-    for k, v in var_dict.items():
-        if not any(excl in k for excl in excluded_parts):
-            non_copy_name = re.sub(r'_copy\d*', '', k)
-            for candidate_dict in new_var_dicts:
-                if non_copy_name not in candidate_dict:
-                    candidate_dict[non_copy_name] = v
-                    break
-            else:
-                new_var_dicts.append({non_copy_name: v})
-
-    savers = [tf.compat.v1.train.Saver(var_list=d) for d in new_var_dicts]
-    global_init_op = tf.compat.v1.global_variables_initializer()
-
-    def init_fn(_, sess):
-        sess.run(global_init_op)
-        for saver in savers:
-            logging.info('Loading pretrained weights.')
-            saver.restore(sess, pretrained_path)
-
-    return init_fn
+        summed_over_other_heatmap_axes = tf.reduce_sum(inp, axis=other_heatmap_axes, keepdims=True)
+        coords = tf.cast(tf.linspace(0.0, 1.0, tf.shape(inp)[ax]), inp.dtype)
+        decoded = tf.tensordot(summed_over_other_heatmap_axes, coords, axes=[[ax], [0]])
+        result.append(tf.squeeze(tf.expand_dims(decoded, ax), heatmap_axes))
+    return tf.stack(result, axis=output_coord_axis)
 
 
-def scalar_dict_to_summary(dic):
-    return tf.compat.v1.Summary(
-        value=[tf.compat.v1.Summary.Value(tag=t, simple_value=v) for t, v in dic.items()])
+def decode_heatmap_with_offsets(inp, offset, axis=-1):
+    if not isinstance(axis, (tuple, list)):
+        axis = [axis]
+
+    # Convert negative axes to the corresponding positive index (e.g. -1 means last axis)
+    heatmap_axes = [ax if ax >= 0 else inp.shape.rank + ax + 1 for ax in axis]
+    heatmap_shape = [tf.shape(inp)[ax] for ax in heatmap_axes]
+
+    rel_coords = tf.stack(tf.meshgrid(
+        *[tf.linspace(0.0, 1.0, s) for s in heatmap_shape], indexing='ij'), axis=-1)
+    rel_coord_shape = [tf.shape(inp)[ax] for ax in range(inp.shape.rank)]
+    rel_coord_shape.append(len(heatmap_axes))
+    for ax in range(inp.shape.rank):
+        if ax not in heatmap_axes:
+            rel_coord_shape[ax] = 1
+
+    rel_coords = tf.transpose(rel_coords, [*np.argsort(heatmap_axes), len(heatmap_axes)])
+    rel_coords = tf.reshape(rel_coords, rel_coord_shape)
+    vote_coords = tf.cast(offset, tf.float32) + rel_coords
+    vote_coords = tf.clip_by_value(vote_coords, 0, 1)
+    return tf.reduce_sum(inp[..., tf.newaxis] * vote_coords, axis=heatmap_axes)
 
 
-def map_range(x, xstart, xend, ystart, yend, clip=False):
-    """Maps one interval to another via linear interpolation, optionally clipping the output
-    range."""
+def index_grid(shape):
+    """Returns `len(shape)` tensors, each of shape `shape`. Each tensor contains the corresponding
+    index. """
+    if isinstance(shape, (list, tuple)):
+        ndim = len(shape)
+    else:
+        ndim = static_shape(shape)[0]
 
-    xstart = tf.cast(xstart, x.dtype)
-    xend = tf.cast(xend, x.dtype)
-    ystart = tf.cast(ystart, x.dtype)
-    yend = tf.cast(yend, x.dtype)
-    slope = (yend - ystart) / (xend - xstart)
+    return tf.meshgrid(*[tf.range(shape[i]) for i in range(ndim)], indexing='ij')
 
-    y = ystart + slope * (x - xstart)
-    if clip:
-        ymin = tf.minimum(ystart, yend)
-        ymax = tf.maximum(ystart, yend)
-        return tf.clip_by_value(y, ymin, ymax)
-    return y
+
+def load_image(path, ratio=1):
+    return tf.image.decode_jpeg(
+        tf.io.read_file(path), fancy_upscaling=False, dct_method='INTEGER_FAST', ratio=ratio)
+
+
+def resized_size_and_rest(input_shape, target_shape):
+    target_shape_float = tf.cast(target_shape, tf.float32)
+    input_shape_float = tf.cast(input_shape, tf.float32)
+    factor = tf.reduce_min(target_shape_float / input_shape_float)
+    target_shape_part = tf.cast(factor * input_shape_float, tf.int32)
+    rest_shape = target_shape - target_shape_part
+    return factor, target_shape_part, rest_shape
+
+
+def resize_with_pad(image, target_shape):
+    if image.ndim == 3:
+        return tf.squeeze(resize_with_pad(image[tf.newaxis], target_shape), 0)
+    factor, target_shape_part, rest_shape = resized_size_and_rest(
+        tf.shape(image)[1:3], target_shape)
+    if factor > 1:
+        image = tf.cast(tf.image.resize(
+            image, target_shape_part, method=tf.image.ResizeMethod.BILINEAR), image.dtype)
+    else:
+        image = tf.cast(tf.image.resize(
+            image, target_shape_part, method=tf.image.ResizeMethod.AREA), image.dtype)
+
+    return tf.pad(image, [(0, 0), (rest_shape[0], 0), (rest_shape[1], 0), (0, 0)])
+
+
+def resize_with_unpad(image, orig_shape):
+    if image.ndim == 3:
+        return tf.squeeze(resize_with_unpad(image[tf.newaxis], orig_shape), 0)
+    factor, _, rest_shape = resized_size_and_rest(orig_shape, tf.shape(image)[1:3])
+    image = image[:, rest_shape[0]:, rest_shape[1]:]
+    if factor < 1:
+        image = tf.cast(
+            tf.image.resize(
+                image, orig_shape, method=tf.image.ResizeMethod.BILINEAR), image.dtype)
+    else:
+        image = tf.cast(
+            tf.image.resize(
+                image, orig_shape, method=tf.image.ResizeMethod.AREA), image.dtype)
+    return image
+
+
+def type_spec_from_nested(x):
+    if isinstance(x, dict):
+        return {k: type_spec_from_nested(v) for k, v in x.items()}
+    elif isinstance(x, tuple):
+        return tuple([type_spec_from_nested(v) for v in x])
+    else:
+        return tf.type_spec_from_value(x)
+
+
+def auc(x, t1, t2):
+    t1 = tf.cast(t1, tf.float32)
+    t2 = tf.cast(t2, tf.float32)
+    return tf.nn.relu(np.float32(1) - tf.nn.relu(x - t1) / (t2 - t1))
+

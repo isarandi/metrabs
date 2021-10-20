@@ -9,12 +9,12 @@ from options import FLAGS
 from tfu import TRAIN
 
 
-def augment_appearance(im, learning_phase, rng):
+def augment_appearance(im, learning_phase, occlude_prob, rng):
     occlusion_rng = util.new_rng(rng)
     color_rng = util.new_rng(rng)
 
     if learning_phase == TRAIN or FLAGS.test_aug:
-        if FLAGS.occlude_aug_prob > 0:
+        if occlude_prob > 0:
             occlude_type = str(occlusion_rng.choice(['objects', 'random-erase']))
         else:
             occlude_type = None
@@ -22,7 +22,7 @@ def augment_appearance(im, learning_phase, rng):
         if occlude_type == 'objects':
             # For object occlusion augmentation, do the occlusion first, then the filtering,
             # so that the occluder blends into the image better.
-            if occlusion_rng.uniform(0.0, 1.0) < FLAGS.occlude_aug_prob:
+            if occlusion_rng.uniform(0.0, 1.0) < occlude_prob:
                 im = object_occlude(im, occlusion_rng, inplace=True)
             if FLAGS.color_aug:
                 im = augmentation.color.augment_color(im, color_rng)
@@ -31,8 +31,10 @@ def augment_appearance(im, learning_phase, rng):
             # uniformly in 0-255, as in the Random Erasing paper
             if FLAGS.color_aug:
                 im = augmentation.color.augment_color(im, color_rng)
-            if occlude_type and occlusion_rng.uniform(0.0, 1.0) < FLAGS.occlude_aug_prob:
+            if occlude_type and occlusion_rng.uniform(0.0, 1.0) < occlude_prob:
                 im = random_erase(im, 0, 1 / 3, 0.3, 1.0 / 0.3, occlusion_rng, inplace=True)
+        elif occlude_type is None and FLAGS.color_aug:
+            im = augmentation.color.augment_color(im, color_rng)
 
     return im
 

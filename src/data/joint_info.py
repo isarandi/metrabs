@@ -2,7 +2,6 @@ import itertools
 
 import more_itertools
 from attrdict import AttrDict
-import util
 
 
 class JointInfo:
@@ -17,10 +16,20 @@ class JointInfo:
             raise Exception
 
         self.names = list(sorted(self.ids.keys(), key=self.ids.get))
-        self.n_joints = len(self.ids)
+        self.stick_figure_edges = []
+        self.add_edges(edges)
 
+        # the index of the joint on the opposite side (e.g. maps index of left wrist to index
+        # of right wrist)
+        self.mirror_mapping = [
+            self.ids[JointInfo.other_side_joint_name(name)] for name in self.names]
+
+    @property
+    def n_joints(self):
+        return len(self.ids)
+
+    def add_edges(self, edges):
         if isinstance(edges, str):
-            self.stick_figure_edges = []
             for path_str in edges.split(','):
                 joint_names = path_str.split('-')
                 for joint_name1, joint_name2 in more_itertools.pairwise(joint_names):
@@ -28,12 +37,7 @@ class JointInfo:
                         edge = (self.ids[joint_name1], self.ids[joint_name2])
                         self.stick_figure_edges.append(edge)
         else:
-            self.stick_figure_edges = edges
-
-        # the index of the joint on the opposite side (e.g. maps index of left wrist to index
-        # of right wrist)
-        self.mirror_mapping = [
-            self.ids[JointInfo.other_side_joint_name(name)] for name in self.names]
+            self.stick_figure_edges.extend(edges)
 
     def update_names(self, new_names):
         if isinstance(new_names, str):

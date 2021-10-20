@@ -161,7 +161,7 @@ def get_cameras(metadata_path):
 
 
 def make_h36m_camera(extrinsic_params, intrinsic_params):
-    x_angle, y_angle, z_angle = extrinsic_params[0:3]
+    x_angle, y_angle, z_angle = extrinsic_params[:3]
     R = transforms3d.euler.euler2mat(x_angle, y_angle, z_angle, 'rxyz')
     t = extrinsic_params[3:6]
     f, c, k, p = np.split(intrinsic_params, (2, 4, 7))
