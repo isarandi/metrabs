@@ -34,11 +34,11 @@ pred['boxes'], pred['poses2d'], pred['poses3d']
 
 # Intrinsic matrix specified via field-of-view angle (of the larger image side).
 # Principal point is assumed to be the image center.
-pred = model.predict_single_image(image, default_fov_degrees=60)
+pred = model.detect_poses(image, default_fov_degrees=60)
 
 # Known intrinsic matrix
 intrinsic_matrix = tf.constant([[1962, 0, 540], [0, 1969, 960], [0, 0, 1]], dtype=tf.float32)
-detections, poses3d, poses2d = model.detect_poses(image, intrinsic_matrix=intrinsic_matrix)
+pred = model.detect_poses(image, intrinsic_matrix=intrinsic_matrix)
 ```
 
 All the above also works for **multiple input images** (batched mode) using
