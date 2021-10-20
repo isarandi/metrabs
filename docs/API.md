@@ -52,8 +52,6 @@ Only the first argument is mandatory.
   setting ```suppress_implausible_poses=True```).
 - **detector_flip_aug**: boolean, whether to run the image through the detector with horizontal
   flipping as well and aggregate the results (before the detector NMS step).
-- **detector_bothflip_aug**:  as ```detector_flip_aug``` but both for horizontal and vertical
-  flipping.
 - **internal_batch_size**: integer, the size of the crop batches sent to the (Level 1) crop model
   internally. The image crops are batched up internally, so in case of many detections, they are
   processed in chunks to avoid running out of GPU memory. The appropriate value depends on available
