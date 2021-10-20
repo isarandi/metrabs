@@ -9,7 +9,7 @@ import poseviz
 
 
 def main():
-    model = tf.saved_model.load(download_model('metrabs_eff2l_y4'))
+    model = tf.saved_model.load(download_model('metrabs_eff2l_y4_360'))
     skeleton = 'smpl+head_30'
     joint_names = model.per_skeleton_joint_names[skeleton].numpy().astype(str)
     joint_edges = model.per_skeleton_joint_edges[skeleton].numpy()
