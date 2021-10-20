@@ -44,7 +44,7 @@ Only the first argument is mandatory.
   coordinate system. Used for sending "upright" crops into the pose estimation model, even if the
   camera's roll angle is nonzero.
 - **default_fov_degrees**: in case ```intrinsic_matrix``` is not supplied, this float scalar
-  specifies in the field of view in degrees along the larger side of the input image.
+  specifies the field of view in degrees along the larger side of the input image.
 - **internal_batch_size**: integer, the size of the crop batches sent to the raw crop-consuming model
   internally. The image crops are batched up internally, so in case of many detections, they are
   processed in chunks to avoid running out of GPU memory. The appropriate value depends on available
@@ -56,8 +56,7 @@ Only the first argument is mandatory.
   Differently rotated, flipped and brightness-adjusted versions of each crop are fed through the
   crop model and results are averaged after transforming back to the camera reference frame.
 - **average_aug**: boolean, whether the output should contain averages over the different test-time
-  augmentation results. If False, the results will contain all augmentation results individually,
-  addressable on the third axis.
+  augmentation results. If False, the results will contain all augmentation results individually.
 - **skeleton**: string, specifying what skeleton convention to use. See at the end of the page for
   the available options.
 - **detector_threshold**: float value for thresholding the inner person detector
