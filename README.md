@@ -4,7 +4,7 @@
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/metrabs-metric-scale-truncation-robust/3d-human-pose-estimation-on-3d-poses-in-the)](https://paperswithcode.com/sota/3d-human-pose-estimation-on-3d-poses-in-the?p=metrabs-metric-scale-truncation-robust)
 
 <p align="center"><img src=demo.gif width="60%"></p>
-<p align="center"><a href="https://youtu.be/BemM8-Lx47g"><img src=thumbnail_video_qual.png width="30%"></a>
+<p align="center"><a href="https://youtu.be/4VFKiiW9RCQ"><img src=thumbnail_video_qual.png width="30%"></a>
 <a href="https://youtu.be/BemM8-Lx47g"><img src=thumbnail_video_conf.png width="30%"></a></p>
 
 This repository contains code for the methods described in the following paper:
