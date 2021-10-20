@@ -6,7 +6,7 @@ import tensorflow as tf
 
 def main():
     model = tf.saved_model.load(download_model('metrabs_eff2l_y4'))
-    image = tf.image.decode_jpeg(tf.io.read_file('test_image_3dpw.jpg'))
+    image = tf.image.decode_jpeg(tf.io.read_file('img/test_image_3dpw.jpg'))
     skeleton = 'smpl_24'
 
     pred = model.detect_poses(image, default_fov_degrees=55, skeleton=skeleton)

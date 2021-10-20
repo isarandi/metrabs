@@ -3,9 +3,9 @@
 <a href="https://colab.research.google.com/github/isarandi/metrabs/blob/master/metrabs_demo.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a><br>
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/metrabs-metric-scale-truncation-robust/3d-human-pose-estimation-on-3d-poses-in-the)](https://paperswithcode.com/sota/3d-human-pose-estimation-on-3d-poses-in-the?p=metrabs-metric-scale-truncation-robust)
 
-<p align="center"><img src=demo.gif width="60%"></p>
-<p align="center"><a href="https://youtu.be/4VFKiiW9RCQ"><img src=thumbnail_video_qual.png width="30%"></a>
-<a href="https://youtu.be/BemM8-Lx47g"><img src=thumbnail_video_conf.png width="30%"></a></p>
+<p align="center"><img src=img/demo.gif width="60%"></p>
+<p align="center"><a href="https://youtu.be/4VFKiiW9RCQ"><img src=img/thumbnail_video_qual.png width="30%"></a>
+<a href="https://youtu.be/BemM8-Lx47g"><img src=img/thumbnail_video_conf.png width="30%"></a></p>
 
 This repository contains code for the methods described in the following paper:
 
@@ -47,7 +47,7 @@ https://colab.research.google.com/github/isarandi/metrabs/blob/master/metrabs_de
 import tensorflow as tf
 
 model = tf.saved_model.load('path/to/metrabs_eff2l_y4')
-image = tf.image.decode_jpeg(tf.io.read_file('test_image_3dpw.jpg'))
+image = tf.image.decode_jpeg(tf.io.read_file('img/test_image_3dpw.jpg'))
 pred = model.detect_poses(image)
 pred['boxes'], pred['poses2d'], pred['poses3d']
 ```
