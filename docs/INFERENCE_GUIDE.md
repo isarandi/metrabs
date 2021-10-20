@@ -120,9 +120,9 @@ sense that a lot of the convenience features of the main model are not supported
 import tensorflow as tf
 
 model = tf.saved_model.load('metrabs_eff2l_y4').crop_model
-image = tf.image.decode_jpeg(tf.io.read_file(...))  # a 256x256 px image
-images = tf.stack([image, image], axis=0)
-images = tf.cast(images, tf.float16)/255
+image = tf.image.decode_jpeg(tf.io.read_file('test_image_3dpw.jpg'))
+crops = tf.stack([image, image], axis=0)[:, :256, :256]
+crops = tf.cast(crops, tf.float16)/255
 intrinsic_matrix = tf.constant(..., dtype=tf.float32)  # compute your own intrinsic matrix, shape [N, 3, 3]
-poses3d = model.predict_multi(images, intrinsic_matrix)
+poses3d = model.predict_multi(crops, intrinsic_matrix)
 ```
