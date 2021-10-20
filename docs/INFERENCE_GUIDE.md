@@ -25,7 +25,7 @@ to find person bounding boxes and estimate their poses, in a single method call.
 ```python
 import tensorflow as tf
 
-model = tf.saved_model.load('models/metrabs_eff2l_y4')
+model = tf.saved_model.load('metrabs_eff2l_y4')
 image = tf.image.decode_jpeg(tf.io.read_file('test_image_3dpw.jpg'))
 
 # With unknown intrinsic matrix (assumes 55 degree field-of-view)
@@ -79,7 +79,7 @@ methods ```estimate_poses``` and ```estimate_poses_batched```:
 ```python
 import tensorflow as tf
 
-model = tf.saved_model.load('models/metrabs_eff2l_y4')
+model = tf.saved_model.load('metrabs_eff2l_y4')
 image = tf.image.decode_jpeg(tf.io.read_file('test_image_3dpw.jpg'))
 intrinsic_matrix = tf.constant([[1962, 0, 540], [0, 1969, 960], [0, 0, 1]], dtype=tf.float32)
 # Boxes are represented in [left, top, width, height] order
@@ -109,7 +109,7 @@ pred = model.estimate_poses_batched(image, boxes=person_boxes, intrinsic_matrix=
 pred['poses2d'], pred['poses3d']
 ```
 
-### Bare-bones model, directly taking a batch of 256x256 px crops
+## Bare-bones model, directly taking a batch of 256x256 px crops
 
 If you want to perform the cropping yourself (it's tricky!), you can use the raw model as follows.
 This model only works in batch mode and takes float16 images. This model is "bare-bones" in the
@@ -119,7 +119,7 @@ sense that a lot of the convenience features of the main model are not supported
 ```python
 import tensorflow as tf
 
-model = tf.saved_model.load('models/metrabs_effnetv2l_raw')
+model = tf.saved_model.load('metrabs_eff2l_y4').crop_model
 image = tf.image.decode_jpeg(tf.io.read_file(...))  # a 256x256 px image
 images = tf.stack([image, image], axis=0)
 intrinsic_matrix = tf.constant(..., dtype=tf.float32)  # compute your own intrinsic matrix
