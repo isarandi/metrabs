@@ -37,7 +37,7 @@ Only the first argument is mandatory.
   If left at the default value, the intrinsic matrix is determined from
   the ```default_fov_degrees``` argument.
 - **distortion_coeffs**: a ```float32``` Tensor of shape ```[5]```, five lens distortion
-  coefficients according to OpenCV's distortion model and the same order (k1, k2, p1, p2, k3).
+  coefficients according to [OpenCV's distortion model](https://docs.opencv.org/2.4/modules/calib3d/doc/camera_calibration_and_3d_reconstruction.html) and the same order (k1, k2, p1, p2, k3).
 - **extrinsic_matrix**: a ```float32``` Tensor of shape ```[4, 4]```, the camera extrinsic matrix,
   with millimeters as the unit of the translation vector.
 - **world_up_vector**: a ```float32``` Tensor of shape ```[3]``` the vector pointing up in the world
@@ -113,7 +113,7 @@ Only the first argument is mandatory.
   intrinsic matrix is used for all the images in the batch. Optional. If not given, the intrinsic
   matrix is determined from the ```default_fov_degrees``` argument.
 - **distortion_coeffs**: a ```float32``` Tensor of shape ```[N, 5]``` or ```[1, 5]```, five lens
-  distortion coefficients for each image, according to OpenCV's distortion model and the same
+  distortion coefficients for each image, according to [OpenCV's distortion model](https://docs.opencv.org/2.4/modules/calib3d/doc/camera_calibration_and_3d_reconstruction.html) and the same
   order (k1, k2, p1, p2, k3). If the shape is ```[1, 5]```, the same distortion coefficients are
   applied for all images.
 - **extrinsic_matrix**: either a ```float32``` Tensor of shape ```[N, 4, 4]``` giving the extrinsic
