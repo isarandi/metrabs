@@ -71,7 +71,7 @@ bone-lengths and augmentation consistency). Furthermore, duplicates are suppress
 pose-based non-maximum suppression**. (This allows setting the detector threshold lower to reduce
 false negatives and at the same time eliminate most false positives.)
 
-### Level 2: User-supplied bounding boxes
+## User-supplied bounding boxes
 
 If you want to supply the bounding boxes yourself, you can do that as well with the
 methods ```estimate_poses``` and ```estimate_poses_batched```:
