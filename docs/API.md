@@ -2,7 +2,7 @@
 
 Make sure to read the [inference quick guide](INFERENCE_GUIDE.md) first.
 
-All models are released as TensorFlow SavedModels for ease of use and can be loaded as
+All [models are released](MODELS.md) as TensorFlow SavedModels for ease of use and can be loaded as
 
 ```python
 import tensorflow as tf
@@ -245,6 +245,8 @@ A dictionary with the following keys and values:
 
 This model requires the user to perform image cropping manually.
 
+It can be accessed as model.crop_model (and extracted to a barebones SavedModel model with tf.saved_mode.save()).
+
 ## Methods
 
 ### model.predict_multi
@@ -285,7 +287,7 @@ To get the names of the joints and kinematic connectivities between them, use
 the ```per_skeleton_joint_names``` and ```per_skeleton_edges``` attributes. Example:
 
 ```python
-dets, poses3d, poses2d = model.predict_single_image(image, skeleton='smpl_24')
+pred = model.detect_poses(image, skeleton='smpl_24')
 for i, j in model.per_skeleton_edges['smpl_24']:
-    draw_line(poses2d[i], poses2d[j])
+    draw_line(pred['poses2d'][i], pred['poses2d'][j])
 ```
