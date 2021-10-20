@@ -57,11 +57,11 @@ training datasets.
 
 ### Demos
 
-* Run ```python demo.py``` to auto-download the model, predict on a sample image and display the
+* [```./demo.py```](demo.py) to auto-download the model, predict on a sample image and display the
   result with Matplotlib or [PoseViz](https://github.com/isarandi/poseviz) (if installed).
-* Run ```python demo_webcam.py``` to show webcam inference with the MobileNetV3 backbone (fast but
+* [```./demo_webcam.py```](demo_webcam.py) to show webcam inference with the MobileNetV3 backbone (fast but
   lower accuracy, requires [PoseViz](https://github.com/isarandi/poseviz)).
-* Run ```python demo_video_batched.py path/to/video.mp4``` to run batched video inference (requires
+* [```./demo_video_batched.py```](demo_video_batched.py)``` path/to/video.mp4``` to run batched video inference (requires
   [PoseViz](https://github.com/isarandi/poseviz)).
 
 ### Documentation
