@@ -45,7 +45,7 @@ Only the first argument is mandatory.
   camera's roll angle is nonzero.
 - **default_fov_degrees**: in case ```intrinsic_matrix``` is not supplied, this float scalar
   specifies in the field of view in degrees along the larger side of the input image.
-- **internal_batch_size**: integer, the size of the crop batches sent to the (Level 1) crop model
+- **internal_batch_size**: integer, the size of the crop batches sent to the raw crop-consuming model
   internally. The image crops are batched up internally, so in case of many detections, they are
   processed in chunks to avoid running out of GPU memory. The appropriate value depends on available
   GPU memory and the size of the backbone.
