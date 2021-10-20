@@ -1,5 +1,7 @@
 # Model Downloads
 
+Note: these models **cannot be used for commercial purposes** due to the license terms of the training data (see below).
+
 | Model Download       | Backbone                 | Detector    | 3DPW PCK@50mm ↑  | 3DPW MPJPE ↓ | H36M S9/S11 MPJPE ↓ | 3DHP PCK@150mm ↑ | MuPoTS PCK@150mm ↑ | MuPoTS Abs-MPJPE ↓ | Avg FPS on 3DPW (batched) | Single-person FPS (batched) |
 |----------------------|--------------------------|-------------|------------------|--------------|---------------------|------------------|--------------------|--------------------|---------------------------|-----------------------------|
 | [metrabs_eff2l_y4](https://omnomnom.vision.rwth-aachen.de/data/metrabs/metrabs_eff2l_y4_20211019.zip) (654 MB)     | EfficientNetV2-L         | YOLOv4      | **53.3%**        | **61.9 mm**  | **41.1 mm**         | **95.7%**        | **94.7%**          | 191.7 mm           | TBA                       | TBA                         |
@@ -10,7 +12,7 @@
 
 This evaluation was performed with the built-in 5-crop test-time augmentation. More detailed evaluation results TBA.
 
-All the above models were jointly trained on the datasets below. Due to their license terms, the resulting models **cannot be used for commercial purposes**.
+## Training Datasets
 
 - [Human3.6M](http://vision.imar.ro/human3.6m)
 - [MuCo-3DHP](https://vcai.mpi-inf.mpg.de/projects/SingleShotMultiPerson/)
