@@ -8,7 +8,7 @@ import poseviz
 
 
 def main():
-    model = tf.saved_model.load(download_model('metrabs_mob3l_y4t'))
+    model = tf.saved_model.load(download_model('metrabs_rn18_y4'))
     skeleton = 'smpl+head_30'
     joint_names = model.per_skeleton_joint_names[skeleton].numpy().astype(str)
     joint_edges = model.per_skeleton_joint_edges[skeleton].numpy()
@@ -30,7 +30,7 @@ def frames_from_webcam():
 def download_model(model_type):
     server_prefix = 'https://omnomnom.vision.rwth-aachen.de/data/metrabs'
     model_zippath = tf.keras.utils.get_file(
-        origin=f'{server_prefix}/{model_type}_20211019.zip',
+        origin=f'{server_prefix}/{model_type}.zip',
         extract=True, cache_subdir='models')
     model_path = os.path.join(os.path.dirname(model_zippath), model_type)
     return model_path
