@@ -6,6 +6,7 @@ import cv2
 import tensorflow as tf
 
 import poseviz
+import cameralib
 
 
 def main():
@@ -19,7 +20,7 @@ def main():
 
     for frame_batch in frame_batches:
         pred = model.detect_poses_batched(frame_batch, skeleton=skeleton, default_fov_degrees=55)
-        camera = poseviz.Camera.from_fov(55, frame_batch.shape[1:3])
+        camera = cameralib.Camera.from_fov(55, frame_batch.shape[1:3])
         for frame, boxes, poses3d in zip(
                 frame_batch.numpy(), pred['boxes'].numpy(), pred['poses3d'].numpy()):
             viz.update(frame, boxes, poses3d, camera)
