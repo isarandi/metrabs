@@ -5,6 +5,7 @@ import cv2
 import tensorflow as tf
 
 import poseviz
+import cameralib
 
 
 def main():
@@ -17,7 +18,7 @@ def main():
     for frame in frames_from_webcam():
         pred = model.detect_poses(
             frame, skeleton=skeleton, default_fov_degrees=55, detector_threshold=0.5)
-        camera = poseviz.Camera.from_fov(55, frame.shape[:2])
+        camera = cameralib.Camera.from_fov(55, frame.shape[:2])
         viz.update(frame, pred['boxes'], pred['poses3d'], camera)
 
 
