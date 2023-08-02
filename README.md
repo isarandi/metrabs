@@ -143,6 +143,7 @@ The newer large-scale models correspond to the WACV'23 paper:
     booktitle = {IEEE/CVF Winter Conference on Applications of Computer Vision (WACV)},
     year = {2023}
 } 
+```
 
 ## Contact
 
