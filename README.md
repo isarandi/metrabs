@@ -7,15 +7,23 @@
 <p align="center"><a href="https://youtu.be/4VFKiiW9RCQ"><img src=img/thumbnail_video_qual.png width="30%"></a>
 <a href="https://youtu.be/BemM8-Lx47g"><img src=img/thumbnail_video_conf.png width="30%"></a></p>
 
-This repository contains code for the methods described in the following paper:
+This repository contains code for the following paper:
 
 **[MeTRAbs: Metric-Scale Truncation-Robust Heatmaps for Absolute 3D Human Pose Estimation](https://arxiv.org/abs/2007.07227)** <br>
 *by István Sárándi, Timm Linder, Kai O. Arras, Bastian Leibe*<br>
 IEEE Transactions on Biometrics, Behavior, and Identity Science (T-BIOM), Selected Best Works From
-Automated Face and Gesture Recognition 2020
+Automated Face and Gesture Recognition 2020.
+
+The repo has been updated to an improved version employed in the following paper: 
+
+**[Learning 3D Human Pose Estimation from Dozens of Datasets using a Geometry-Aware Autoencoder to Bridge Between Skeleton Formats ](https://arxiv.org/abs/2212.14474)** <br>
+*by István Sárándi, Alexander Hermans, Bastian Leibe*<br>
+IEEE/CVF Winter Conference on Applications of Computer Vision (WACV), 2023.
+
 
 ## News
 
+* [2023-08-02] Major codebase refactoring, models as described in our [WACV'23 paper](https://istvansarandi.com/dozens), several components factored out into separate repos, PyTorch support for inference, and more.
 * [2021-12-03] Added new backbones, including the ResNet family from ResNet-18 to ResNet-152
 * [2021-10-19] Released new best-performing [models](docs/MODELS.md) based on EfficientNetV2 and super fast
   ones using MobileNetV3, simplified [API](docs/API.md), multiple skeleton conventions, support for
@@ -46,30 +54,36 @@ https://colab.research.google.com/github/isarandi/metrabs/blob/master/metrabs_de
 
 ```python
 import tensorflow as tf
+import tensorflow_hub as tfhub
 
-model = tf.saved_model.load('path/to/metrabs_eff2l_y4')
+model = tfhub.load('https://bit.ly/metrabs_l')
 image = tf.image.decode_jpeg(tf.io.read_file('img/test_image_3dpw.jpg'))
 pred = model.detect_poses(image)
 pred['boxes'], pred['poses2d'], pred['poses3d']
 ```
 
+See also the [demos](demos/) folder for more examples.
+
 NOTE: The models can only be used for **non-commercial** purposes due to the licensing of the used
 training datasets.
 
+Alternatively, you can try the experimental PyTorch version:
+
+```bash
+wget -O - https://bit.ly/metrabs_l_pt | tar -xzvf -
+python -m metrabs_pytorch.scripts.demo_image --model-dir metrabs_eff2l_384px_800k_28ds_pytorch --image img/test_image_3dpw.jpg
+```
+
 ### Demos
 
-* [```./demo.py```](demo.py) to auto-download the model, predict on a sample image and display the
+* [```./demo.py```](demos/demo.py) to auto-download the model, predict on a sample image and display the
   result with Matplotlib or [PoseViz](https://github.com/isarandi/poseviz) (if installed).
-* [```./demo_webcam.py```](demo_webcam.py) to show webcam inference with the MobileNetV3 backbone (fast but
-  lower accuracy, requires [PoseViz](https://github.com/isarandi/poseviz)).
-* [```./demo_video_batched.py```](demo_video_batched.py)``` path/to/video.mp4``` to run batched video inference (requires
-  [PoseViz](https://github.com/isarandi/poseviz)).
+* [```./demo_video.py```](demos/demo_video.py)``` filepath-or-url-to-video.mp4``` to run inference on a video.
 
 ### Documentation
 
 - **[How-to Guide with Examples](docs/INFERENCE_GUIDE.md)**
 - **[Full API Reference](docs/API.md)**
-- **[Model Zoo with Downloads](docs/MODELS.md)**
 
 ### Feature Summary
 
@@ -89,8 +103,7 @@ training datasets.
 
 ## Training and Evaluation
 
-See [the docs on training and evaluation](TRAINING_AND_EVAL.md) to perform the experiments presented
-in the paper.
+See the docs directory.
 
 ## BibTeX
 

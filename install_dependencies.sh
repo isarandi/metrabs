@@ -1,41 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# This was tested on Ubuntu 18.04.5
-sudo apt install build-essential --yes wget curl gfortran git ncurses-dev unzip tar
+# This was tested on Ubuntu 18.04 and 22.04
+sudo apt update
+sudo apt install build-essential --yes wget curl gfortran git ncurses-dev libncursesw5-dev unzip tar libxcb-xinerama0
 
-# Anaconda (anaconda.com) is the simplest way to install most of the dependencies.
-# If you don't have it installed yet, install Miniconda as follows:
+################
+# This part is ONLY needed if you'll work with the original Human3.6M files.
+# For this, we need to install the [CDF library](https://cdf.gsfc.nasa.gov/) since the annotations are in CDF files.
+# We will use [SpacePy](https://spacepy.github.io/) as a wrapper, which in turn depends on this CDF library.
+CDF_VERSION=39_0
+wget "https://spdf.gsfc.nasa.gov/pub/software/cdf/dist/cdf${CDF_VERSION}/linux/cdf${CDF_VERSION}-dist-cdf.tar.gz"
+tar xf "cdf${CDF_VERSION}-dist-cdf.tar.gz"
+rm "cdf${CDF_VERSION}-dist-cdf.tar.gz"
+pushd "cdf${CDF_VERSION}-dist"
+make OS=linux ENV=gnu CURSES=yes FORTRAN=no UCOPTIONS=-O2 SHARED=yes -j"$(nproc)" all
+# If you have sudo rights, simply run `sudo make install`. If you have no `sudo` rights, make sure to add
+# `cdf${CDF_VERSION}-dist/src/lib` to the `LD_LIBRARY_PATH` environment variable (add the line below to ~/.bashrc for permanent effect), or use GNU Stow.
+# The following will work temporarily:
+export LD_LIBRARY_PATH=$PWD/src/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+popd
+####################
+
+# Conda is the simplest way to install the dependencies
+# If you don't have it yet, install Miniconda as follows:
 wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
 bash ./Miniconda3-latest-Linux-x86_64.sh -b
 eval "$("$HOME/miniconda3/bin/conda" shell.bash hook)"
 
-# Create a new environment and install the dependencies:
-conda create --yes --name metrabs python=3.8 matplotlib imageio ffmpeg scikit-image scikit-learn tqdm numba cachetools Cython Pillow mayavi -c defaults -c conda-forge
+# Create a new environment and install the dependencies
+conda env create --name=metrabs --file=environment.yml
 conda activate metrabs
-pip install tensorflow tensorflow-addons attrdict importlib_resources jpeg4py imageio-ffmpeg transforms3d more_itertools spacepy einops yacs opencv-python
-
-# Install my fork of the COCO tools, used for managing runlength-encoded (RLE) masks.
-# The additional functionality in my fork is for mask inversion in RLE, which is only needed for generating the MuCo dataset.
-git clone https://github.com/isarandi/cocoapi
-cd cocoapi/PythonAPI
-make
-python setup.py install
-cd ../..
-rm -rf cocoapi
-
-# We need to install the [CDF library](https://cdf.gsfc.nasa.gov/) because Human3.6M supplies the annotations as cdf files.
-# We read them using the [SpacePy](https://spacepy.github.io/) Python library, which in turn depends on the CDF library.
-wget https://spdf.sci.gsfc.nasa.gov/pub/software/cdf/dist/cdf37_1/linux/cdf37_1-dist-cdf.tar.gz
-tar xf cdf37_1-dist-cdf.tar.gz
-rm cdf37_1-dist-cdf.tar.gz
-cd cdf37_1-dist
-make OS=linux ENV=gnu CURSES=yes FORTRAN=no UCOPTIONS=-O2 SHARED=yes -j4 all
-
-# If you have sudo rights, simply run `sudo make install`. If you have no `sudo` rights, make sure to add the
-# `cdf37_1-dist/src/lib` to the `LD_LIBRARY_PATH` environment variable (add to ~/.bashrc for permanent effect), or use GNU Stow.
-# The following will work temporarily:
-export LD_LIBRARY_PATH=$PWD/src/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+pip install --no-build-isolation git+https://github.com/spacepy/spacepy
 
 # Optional:
 # Install libjpeg-turbo for faster JPEG decoding.
@@ -43,5 +39,13 @@ export LD_LIBRARY_PATH=$PWD/src/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
 # Then compile it.
 # Or use the repo:
 # git clone https://github.com/libjpeg-turbo/libjpeg-turbo.git
-# cmake -DCMAKE_POSITION_INDEPENDENT_CODE=ON -G"Unix Makefiles" .
-# make
+# cd libjpeg-turbo
+# PACKAGE_NAME=libjpeg-turbo
+# TARGET=$HOME/.local
+# sudo apt install nasm
+# cmake -DCMAKE_INSTALL_PREFIX="$TARGET"  -DCMAKE_POSITION_INDEPENDENT_CODE=ON -G"Unix Makefiles" .
+# TEMP_DESTDIR=$(mktemp --directory --tmpdir="$STOW_DIR")
+# make -j "$(nproc)" install DESTDIR="$TEMP_DESTDIR"
+# mv -T "$TEMP_DESTDIR/$TARGET" "$STOW_DIR/$PACKAGE_NAME"
+# rm -rf "$TEMP_DESTDIR"
+# stow "$PACKAGE_NAME" --target="$TARGET"
