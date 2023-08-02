@@ -1,13 +1,13 @@
 # MeTRAbs API Reference
 
-*See also the [inference example guide](INFERENCE_GUIDE.md) and [demo.py](../demo.py), [demo_webcam.py](../demo_webcam.py) and [demo_video_batched.py](../demo_video_batched.py)*
+*See also the [inference example guide](INFERENCE_GUIDE.md) and [demo.py](../demos/demo.py), [demo_webcam.py](../demo_webcam.py) and [demo_video_batched.py](../demo_video_batched.py)*
 
 All [models are released](MODELS.md) as TensorFlow SavedModels for ease of use and can be loaded as
 
 ```python
-import tensorflow as tf
+import tensorflow_hub as hub
 
-model = tf.saved_model.load('path_to_model')
+model = hub.load(path_or_url)
 ```
 
 ## Methods
@@ -36,8 +36,10 @@ Only the first argument is mandatory.
 - **intrinsic_matrix**: a ```float32``` Tensor of shape ```[3, 3]```, the camera's intrinsic matrix.
   If left at the default value, the intrinsic matrix is determined from
   the ```default_fov_degrees``` argument.
-- **distortion_coeffs**: a ```float32``` Tensor of shape ```[5]```, five lens distortion
-  coefficients according to [OpenCV's distortion model](https://docs.opencv.org/2.4/modules/calib3d/doc/camera_calibration_and_3d_reconstruction.html) and the same order (k1, k2, p1, p2, k3).
+- **distortion_coeffs**: a ```float32``` Tensor of a single dimension and between 5 and 12 elements.
+  These are the lens distortion coefficients according to OpenCV's distortion model and the same order
+  (k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4). If it has less than 12 elements, the rest are
+  assumed to be zero.
 - **extrinsic_matrix**: a ```float32``` Tensor of shape ```[4, 4]```, the camera extrinsic matrix,
   with millimeters as the unit of the translation vector.
 - **world_up_vector**: a ```float32``` Tensor of shape ```[3]``` the vector pointing up in the world
@@ -112,9 +114,10 @@ Only the first argument is mandatory.
   matrix for each image, or a ```float32``` Tensor of shape ```[1, 3, 3]``` in which case the same
   intrinsic matrix is used for all the images in the batch. Optional. If not given, the intrinsic
   matrix is determined from the ```default_fov_degrees``` argument.
-- **distortion_coeffs**: a ```float32``` Tensor of shape ```[N, 5]``` or ```[1, 5]```, five lens
-  distortion coefficients for each image, according to [OpenCV's distortion model](https://docs.opencv.org/2.4/modules/calib3d/doc/camera_calibration_and_3d_reconstruction.html) and the same
-  order (k1, k2, p1, p2, k3). If the shape is ```[1, 5]```, the same distortion coefficients are
+- **distortion_coeffs**: a ```float32``` Tensor of shape ```[N, M]``` or ```[1, M]```, M lens
+  distortion coefficients for each image, according to OpenCV's distortion model and the same
+  order (k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4). If M<12, the rest of the coefficients are assumed zero.
+  If the first dimension in the shape is 1, the same distortion coefficients are
   applied for all images.
 - **extrinsic_matrix**: either a ```float32``` Tensor of shape ```[N, 4, 4]``` giving the extrinsic
   matrix for each image, or a ```float32``` Tensor of shape ```[1, 4, 4]``` in which case the same
@@ -245,7 +248,7 @@ model.predict_multi(image, intrinsic_matrix)
 
 #### Arguments:
 
-- **image**: a ```float16``` Tensor of shape ```[N, 256, 256, 3]``` with RGB pixel values ranging between 0 and 1
+- **image**: a ```float16``` Tensor of shape ```[N, 256, 256, 3]```
 - **intrinsic_matrix**: a ```float32``` Tensor of shape ```[N, 3, 3]```
 
 #### Return value:
@@ -260,22 +263,7 @@ model.predict_multi(image, intrinsic_matrix)
 Our models support several different skeleton conventions out of the box. Specify one of the
 following strings as the ```skeleton``` argument to the prediction functions.
 
-- ```smpl_24```: SMPL body model
-- ```coco_19```: COCO joints including pelvis at the midpoint of the hips and neck at the midpoint
-  of the shoulders as in CMU-Panoptic.
-- ```h36m_17```: Most common Human3.6M joint convention
-- ```h36m_25```: Extended Human3.6M joint set
-- ```mpi_inf_3dhp_17```: MPI-INF-3DHP main joints (same as the MuPoTS joints)
-- ```mpi_inf_3dhp_28```: full MPI-INF-3DHP joint set
-- ```smpl+head_30```: SMPL joints plus face keypoints from COCO and the head top from MPI-INF-3DHP (
-  recommended for visualization as SMPL_24 has no face keypoints).
-- (empty string): All the joints that the model was trained on.
+`smpl_24, kinectv2_25, h36m_17, h36m_25, mpi_inf_3dhp_17, mpi_inf_3dhp_28, coco_19, smplx_42, ghum_35, lsp_14, sailvos_26, gpa_34, aspset_17, bml_movi_87, mads_19, berkeley_mhad_43, total_capture_21, jta_22, ikea_asm_17, human4d_32, 3dpeople_29, umpm_15, smpl+head_30`
 
 To get the names of the joints and kinematic connectivities between them, use
-the ```per_skeleton_joint_names``` and ```per_skeleton_edges``` attributes. Example:
-
-```python
-pred = model.detect_poses(image, skeleton='smpl_24')
-for i, j in model.per_skeleton_edges['smpl_24']:
-    draw_line(pred['poses2d'][i], pred['poses2d'][j])
-```
+the ```per_skeleton_joint_names``` and ```per_skeleton_edges``` attributes.
