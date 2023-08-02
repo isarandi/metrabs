@@ -134,6 +134,16 @@ The above paper is an extended journal version of the FG'2020 conference paper:
 }
 ```
 
+The newer large-scale models correspond to the WACV'23 paper:
+
+```bibtex
+@inproceedings{Sarandi2023dozens,
+    author = {S\'ar\'andi, Istv\'an and Hermans, Alexander and Leibe, Bastian},
+    title = {Learning {3D} Human Pose Estimation from Dozens of Datasets using a Geometry-Aware Autoencoder to Bridge Between Skeleton Formats},
+    booktitle = {IEEE/CVF Winter Conference on Applications of Computer Vision (WACV)},
+    year = {2023}
+} 
+
 ## Contact
 
 Code in this repository was written by [István Sárándi](https://isarandi.github.io) (RWTH Aachen
